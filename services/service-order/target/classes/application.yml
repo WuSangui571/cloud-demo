@@ -1,0 +1,12 @@
+spring:
+  application:
+    # 设置这个微服务项目的项目名
+    name: service-order
+  cloud:
+    nacos:
+      # Nacos 地址，不配置也行，默认是本地的 8848 端口
+      server-addr: 127.0.0.1:8848
+
+server:
+  # 设置这个微服务项目的端口号
+  port: 8000
