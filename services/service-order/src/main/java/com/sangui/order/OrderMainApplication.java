@@ -16,5 +16,9 @@ import org.springframework.cloud.client.discovery.EnableDiscoveryClient;
 public class OrderMainApplication {
     public static void main(String[] args) {
         SpringApplication.run(OrderMainApplication.class, args);
+
+        // 1.项目启动就去监听配置文件的变化
+        // 2.发生变化后就拿到变化值
+        // 3.发送邮件
     }
 }

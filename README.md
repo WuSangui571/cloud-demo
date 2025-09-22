@@ -155,7 +155,7 @@
 
 # 2. Nacos
 
-**Nacos** 的全称是 Dynamic **Na**ming and **Co**nfiguration **S**ervice ，一个更易于构建云原生应用的**动态服务发现**、**配置管理**和**服务管理**平台，其官网为：https://nacos.io/。
+**Nacos** 的全称是 Dynamic **Na**ming and **Co**nfiguration **S**ervice ，一个更易于构建云原生应用的**动态服务发现**、**配置管理**和**服务管理**平台，其官网为：https://nacos.io/ 。
 
 ## 2.1 Nacos 下载
 
@@ -998,7 +998,7 @@ Nacos 得负载均衡的核心就是，引入 `spring-cloud-starter-loadbalancer
 
    没调用过注册中心，说明是第一次发起远程调用，就不能通过远程调用。
 
-## 2.8. Nacos 的功能——配置中心
+## 2.8. Nacos ——配置中心的基础用法
 
 + **Step1 添加依赖**
 
@@ -1012,6 +1012,40 @@ Nacos 得负载均衡的核心就是，引入 `spring-cloud-starter-loadbalancer
   </dependency>
   ```
 
+  注意，一旦加入这个依赖，若没有写下一步的配置 或 主动关闭，程序直接报错不能运行：
+
+  ```
+  17:02:01.409 [main] ERROR org.springframework.boot.diagnostics.LoggingFailureAnalysisReporter -- 
+  
+  ***************************
+  APPLICATION FAILED TO START
+  ***************************
+  
+  Description:
+  
+  No spring.config.import property has been defined
+  
+  Action:
+  
+  Add a spring.config.import=nacos: property to your configuration.
+  	If configuration is not required add spring.config.import=optional:nacos: instead.
+  	To disable this check, set spring.cloud.nacos.config.import-check.enabled=false.
+  
+  
+  Process finished with exit code 1
+  ```
+
+  > 温馨提示，若要主动关闭，则在 yaml 文件中加入以下配置：
+  >
+  > ```yaml
+  > spring:
+  >   cloud:
+  >     nacos:
+  >       config:
+  >         import-check:
+  >           enabled: false
+  > ```
+
 + **Step2 添加配置**
 
   在各个需要使用配置的 yaml 文件中，写入如下配置，这些配置可以在项目启动后，导入 Nacos 的那个文件的配置
@@ -1020,14 +1054,15 @@ Nacos 得负载均衡的核心就是，引入 `spring-cloud-starter-loadbalancer
   spring:
     config:
       # 添加 Nacos 配置，项目启动后，导入 service-order.yml 这个配置文件
-      import: nacos:service-order.yml
+      import:
+        - nacos:service-order.yaml
   ```
 
 + **Step3 写具体配置**
 
   在 Nacos 的主页的配置管理的配置列表处，选择创建配置，会看到如下图所示内容，依次输入 Data ID，配置格式 和 配置内容。
 
-  ![image-20250922152210813](README.assets/image-20250922152210813.png)
+  ![image-20250922165642687](README.assets/image-20250922165642687.png)
 
   Data ID 就是这个配置文件的名字，也是你在 SpringBoot 的 yaml 文件中写入想要导入的文件的名字。
 
@@ -1037,7 +1072,187 @@ Nacos 得负载均衡的核心就是，引入 `spring-cloud-starter-loadbalancer
 
 + **Step4 测试导入**
 
+  OrderController 中的 config 方法就是我的测试。
   
+  ```java
+  package com.sangui.order.controller;
+  
+  
+  import com.sangui.order.bean.Order;
+  import com.sangui.order.service.OrderService;
+  import jakarta.annotation.Resource;
+  import org.springframework.beans.factory.annotation.Value;
+  import org.springframework.web.bind.annotation.GetMapping;
+  import org.springframework.web.bind.annotation.RequestParam;
+  import org.springframework.web.bind.annotation.RestController;
+  
+  /**
+   * @Author: sangui
+   * @CreateTime: 2025-09-22
+   * @Description:
+   * @Version: 1.0
+   */
+  @RestController
+  public class OrderController {
+      @Value("${order.timeout}")
+      String orderTimeout;
+      @Value("${order.auto-confirm}")
+      String orderAutoConfirm;
+  
+      @Resource
+      private OrderService orderService;
+  
+      @GetMapping("/create")
+      public Order createOrder(@RequestParam("productId") Long productId,
+                               @RequestParam("userId") Long userId) {
+          return orderService.createOrder(productId, userId);
+      }
+  
+      @GetMapping("/config")
+      public String config() {
+          return "orderTimeout=" + orderTimeout + ",orderAutoConfirm=" + orderAutoConfirm;
+      }
+  }
+  
+  ```
+  
+  至此，打开浏览器，输入：http://localhost:8000/config （端口改为 8001 也可），可以看到，返回的数据是这样：
+  
+  ```
+  orderTimeout=30min,orderAutoConfirm=7d
+  ```
+  
+  但是，当我们现在去更新 Nacos 上的数据时，发现浏览器并不能实时更新，它依旧是使用了旧的数据。此时，我们需要在对应的 Controller 类上加入 @RefreshScope 注解，以实时更新，如：
+  
+  ```java
+  package com.sangui.order.controller;
+  
+  
+  import com.sangui.order.bean.Order;
+  import com.sangui.order.service.OrderService;
+  import jakarta.annotation.Resource;
+  import org.springframework.beans.factory.annotation.Value;
+  import org.springframework.cloud.context.config.annotation.RefreshScope;
+  import org.springframework.web.bind.annotation.GetMapping;
+  import org.springframework.web.bind.annotation.RequestParam;
+  import org.springframework.web.bind.annotation.RestController;
+  
+  /**
+   * @Author: sangui
+   * @CreateTime: 2025-09-22
+   * @Description:
+   * @Version: 1.0
+   */
+  @RefreshScope
+  @RestController
+  public class OrderController {
+      @Value("${order.timeout}")
+      String orderTimeout;
+      @Value("${order.auto-confirm}")
+      String orderAutoConfirm;
+  
+      @Resource
+      private OrderService orderService;
+  
+      @GetMapping("/create")
+      public Order createOrder(@RequestParam("productId") Long productId,
+                               @RequestParam("userId") Long userId) {
+          return orderService.createOrder(productId, userId);
+      }
+  
+      @GetMapping("/config")
+      public String config() {
+          return "orderTimeout=" + orderTimeout + ",orderAutoConfirm=" + orderAutoConfirm;
+      }
+  }
+  ```
+
+## 2.9. Nacos ——配置中心的动态刷新
+
+上一小节中，我们使用了配置中心，使用的是 @Value 注解，一旦需要导入的变量多了，这个代码就不方便了。使用 @ConfigurationProperties 可以实现无感动态刷新功能。
+
+我们可以定义一个专门存放 Properties 的类：
+
+```java
+package com.sangui.order.properties;
+
+
+import lombok.Data;
+import org.springframework.boot.context.properties.ConfigurationProperties;
+import org.springframework.stereotype.Component;
+
+/**
+ * @Author: sangui
+ * @CreateTime: 2025-09-22
+ * @Description: 订单的配置文件类
+ * @Version: 1.0
+ */
+// 批量绑定的前缀
+@ConfigurationProperties(prefix = "order")
+@Component
+@Data
+public class OrderProperties {
+
+    String timeout;
+    // 配置文件中是 auto-confirm 也没关系，会自动驼峰映射成 autoConfirm
+    String autoConfirm;
+}
+```
+
+这里的导入，无需上一章节的 @RefreshScope 注解，即可自动刷新。使用的代码如下：
+
+```java
+package com.sangui.order.controller;
+
+
+import com.sangui.order.bean.Order;
+import com.sangui.order.properties.OrderProperties;
+import com.sangui.order.service.OrderService;
+import jakarta.annotation.Resource;
+import org.springframework.beans.factory.annotation.Value;
+import org.springframework.cloud.context.config.annotation.RefreshScope;
+import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.RequestParam;
+import org.springframework.web.bind.annotation.RestController;
+
+/**
+ * @Author: sangui
+ * @CreateTime: 2025-09-22
+ * @Description:
+ * @Version: 1.0
+ */
+// @RefreshScope
+@RestController
+public class OrderController {
+    //    @Value("${order.timeout}")
+    //    String orderTimeout;
+    //    @Value("${order.auto-confirm}")
+    //    String orderAutoConfirm;
+    
+    @Resource
+    OrderProperties orderProperties;
+
+    @Resource
+    private OrderService orderService;
+
+    @GetMapping("/create")
+    public Order createOrder(@RequestParam("productId") Long productId,
+                             @RequestParam("userId") Long userId) {
+        return orderService.createOrder(productId, userId);
+    }
+
+    @GetMapping("/config")
+    public String config() {
+        return "orderTimeout=" + orderProperties.getTimeout() + ",orderAutoConfirm=" + orderProperties.getAutoConfirm();
+    }
+}
+```
+
+访问浏览器，是可以看到我们的实时更新的数据的。我们更推荐使用这种方式来进行动态刷新。
+
+## 2.10. Nacos ——配置中心的配置监听
+
+Nacos 可以通过 NaocosConfigManager 监听配置文件值得变化
 
 # 3. OpenFeign
 

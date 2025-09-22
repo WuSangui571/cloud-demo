@@ -8,7 +8,8 @@ spring:
       server-addr: 127.0.0.1:8848
   config:
     # 添加 Nacos 配置，项目启动后，导入 service-order.yml 这个配置文件
-    import: nacos:service-order.yml
+    import:
+      - nacos:service-order.yaml
 
 server:
   # 设置这个微服务项目的端口号
