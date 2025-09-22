@@ -159,7 +159,7 @@
 
 ## 2.1 Nacos 下载
 
-下载地址：https://nacos.io/download/nacos-server/。选择版本为 2.4.3 的二进制包下载。
+下载地址：https://nacos.io/download/nacos-server/ 。选择版本为 2.4.3 的二进制包下载。
 
 ## 2.2. 启动 Nacos
 
@@ -169,7 +169,7 @@
 startup.cmd -m standalone
 ```
 
-打开浏览器，输入：http://localhost:8848/nacos/，即可访问 Nacos，如下图。
+打开浏览器，输入：http://localhost:8848/nacos/ ，即可访问 Nacos，如下图。
 
 ![image-20250921163809259](README.assets/image-20250921163809259.png)
 
@@ -248,7 +248,7 @@ startup.cmd -m standalone
 
 + **Step2 查看注册中心效果**
 
-  打开浏览器，输入：http://localhost:8848/nacos/，查看`服务管理`的`服务列表`，即可看到刚刚注册的微服务了，如下图：
+  打开浏览器，输入：http://localhost:8848/nacos/ ，查看`服务管理`的`服务列表`，即可看到刚刚注册的微服务了，如下图：
 
   ![image-20250922132756506](README.assets/image-20250922132756506.png)
 
