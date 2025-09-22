@@ -171,7 +171,7 @@ startup.cmd -m standalone
 
 打开浏览器，输入：http://localhost:8848/nacos/，即可访问 Nacos，如下图。
 
-![image-20250921163809259](assets/image-20250921163809259.png)
+![image-20250921163809259](README.assets/image-20250921163809259.png)
 
 其中里面最重要的两个菜单就是 `配置管理` 和 `服务管理`。配置管理是作为配置中心，服务管理是作为注册中心。
 
@@ -250,11 +250,11 @@ startup.cmd -m standalone
 
   打开浏览器，输入：http://localhost:8848/nacos/，查看`服务管理`的`服务列表`，即可看到刚刚注册的微服务了，如下图：
 
-  ![image-20250922132756506](assets/image-20250922132756506.png)
+  ![image-20250922132756506](README.assets/image-20250922132756506.png)
 
   同样的步骤，为 `service-product` 这个服务，也注册启动，注意修改服务的端口号，再次查看 Nacos，就可以看到注册的两个微服务了，如下图：
 
-  ![image-20250922132849586](assets/image-20250922132849586.png)
+  ![image-20250922132849586](README.assets/image-20250922132849586.png)
 
 + **Step3 集群模式启动测试**
 
@@ -270,7 +270,7 @@ startup.cmd -m standalone
 
   我们再去 Nacos 的服务列表看，看到 server-order 的服务的实例数就变成了 2 个，server-product 的服务的实例数就变成了 3 个，如下图：
   
-  ![image-20250922132921317](assets/image-20250922132921317.png)
+  ![image-20250922132921317](README.assets/image-20250922132921317.png)
 
 我们还可以点击某个服务的详情，里面记录了这个服务的每个实例信息，包括该实例的 IP、端口号、项目名
 
@@ -1027,7 +1027,7 @@ Nacos 得负载均衡的核心就是，引入 `spring-cloud-starter-loadbalancer
 
   在 Nacos 的主页的配置管理的配置列表处，选择创建配置，会看到如下图所示内容，依次输入 Data ID，配置格式 和 配置内容。
 
-  ![image-20250922152210813](assets/image-20250922152210813.png)
+  ![image-20250922152210813](README.assets/image-20250922152210813.png)
 
   Data ID 就是这个配置文件的名字，也是你在 SpringBoot 的 yaml 文件中写入想要导入的文件的名字。
 
