@@ -15,3 +15,7 @@ server:
   # 设置这个微服务项目的端口号
   port: 8000
 
+order:
+  timeout: asd
+  auto-confirm: 1jkdas
+

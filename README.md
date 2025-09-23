@@ -12,7 +12,7 @@
 
 单体机构的基本逻辑走向是：
 
-用户访问域名，自动转到绑定了这个域名的 公网 IP 地址，我们的应用程序就部署在一个公网 IP 之中。
+用户访问域名，自动转到绑定了这个域名的公网 IP 地址，我们的应用程序就部署在一个公网 IP 之中。
 
 他的优点是：建立简单。
 
@@ -32,9 +32,9 @@
 
 分布式架构的基本逻辑走向是：
 
-用户访问域名，自动转到绑定了这个域名的 公网 IP 地址，这个 IP 地址上部署了一个网关，一般是使用 Nginx，他能分配不用的用户，前往不同的服务器，这些服务器上分别都部署了我们的应用程序的某个功能模块。
+用户访问域名，自动转到绑定了这个域名的 公网 IP 地址，这个 IP 地址上部署了一个网关，一般是使用 Nginx，他能分配不用的用户，前往不同的服务器，这些服务器上分别都部署了我们的应用程序的某个或多个功能模块。
 
-他的优点是：解决了单体架构高并发可能产生的宕机危险。同时解决了集群架构的缺点，每个业务模块与模块之间相互独立，至此多种语言编写。
+他的优点是：解决了单体架构高并发可能产生的宕机危险。同时解决了集群架构的缺点，每个业务模块与模块之间相互独立，支持多种语言编写。
 
 # 1. 第一个微服务程序
 
@@ -624,7 +624,7 @@ startup.cmd -m standalone
 
    + 独立 model 模块
 
-     此时，我们发现，比如：在 order 服务中，我们创建不了 product 的实体类，因为他们在不同的模块之中。现在，我们要在我们的 service 模块的同级目录上，新建一个普通 Java 模块，取名为 model，这里会写上所有通用的 model 实体类，这样，就可以删除各自服务之下的 bean 包了，把这些 model 统一移至 model 模块里。
+     此时，我们发现，比如：在 order 模块中，我们创建不了 product 这个实体类，因为他们在不同的模块之中。现在，我们要在我们的 service 模块的同级目录上，新建一个普通 Java 模块，取名为 model，这里会写上所有通用的 model 实体类，这样，就可以删除各自服务之下的 bean 包了，把这些 model 统一移至 model 模块里。
 
      同时，因为 model 模块和 service 模块相对独立，就需要在 service 模块的 pom 文件中，加入 model 模块的依赖，如：
 
@@ -1012,7 +1012,7 @@ Nacos 得负载均衡的核心就是，引入 `spring-cloud-starter-loadbalancer
   </dependency>
   ```
 
-  注意，一旦加入这个依赖，若没有写下一步的配置 或 主动关闭，程序直接报错不能运行：
+  注意，一旦加入这个依赖，若没有写 Step2 的配置 或 主动关闭，程序直接报错不能运行：
 
   ```
   17:02:01.409 [main] ERROR org.springframework.boot.diagnostics.LoggingFailureAnalysisReporter -- 
@@ -1035,15 +1035,15 @@ Nacos 得负载均衡的核心就是，引入 `spring-cloud-starter-loadbalancer
   Process finished with exit code 1
   ```
 
-  > 温馨提示，若要主动关闭，则在 yaml 文件中加入以下配置：
+  > 温馨提示，添加依赖后，若要主动关闭，需在 yaml 文件中加入以下配置：
   >
   > ```yaml
   > spring:
-  >   cloud:
-  >     nacos:
-  >       config:
-  >         import-check:
-  >           enabled: false
+  >     cloud:
+  >        nacos:
+  >          config:
+  >            import-check:
+  >              enabled: false
   > ```
 
 + **Step2 添加配置**
@@ -1252,7 +1252,178 @@ public class OrderController {
 
 ## 2.10. Nacos ——配置中心的配置监听
 
-Nacos 可以通过 NaocosConfigManager 监听配置文件值得变化
+Nacos 可以通过 NaocosConfigManager 监听配置文件值的变化。
+
+加入监听器，这个监听器会在我们程序启动后就一直监听
+
+```java
+package com.sangui.order;
+
+
+import com.alibaba.cloud.nacos.NacosConfigManager;
+import com.alibaba.nacos.api.config.ConfigService;
+import com.alibaba.nacos.api.config.listener.Listener;
+import org.springframework.boot.ApplicationRunner;
+import org.springframework.boot.SpringApplication;
+import org.springframework.boot.autoconfigure.SpringBootApplication;
+import org.springframework.cloud.client.discovery.EnableDiscoveryClient;
+import org.springframework.context.annotation.Bean;
+
+import java.util.concurrent.Executor;
+import java.util.concurrent.Executors;
+
+/**
+ * @Author: sangui
+ * @CreateTime: 2025-09-21
+ * @Description: 订单微服务的主入口程序
+ * @Version: 1.0
+ */
+@EnableDiscoveryClient
+@SpringBootApplication
+public class OrderMainApplication {
+    /**
+     * 我们的整个 web 程序启动后，就会执行这个 applicationRunner 里面的方法。
+     * @param nacosConfigManager 注入的对象，用于配置监听
+     * @return 具体的方法
+     */
+    @Bean
+    ApplicationRunner applicationRunner(NacosConfigManager nacosConfigManager) {
+        // 1.项目启动就去监听配置文件的变化
+        return args->{
+            // System.out.println("============");
+
+            // 拿到配置服务
+            ConfigService configService = nacosConfigManager.getConfigService();
+            // 添加监听器，监听 yaml 配置文件，注意，这里也可以监控非 Nacos 的其他配置文件
+            configService.addListener("service-order.yaml", "DEFAULT_GROUP", new Listener() {
+                @Override
+                public Executor getExecutor() {
+                    return Executors.newFixedThreadPool(4);
+                }
+
+                @Override
+                public void receiveConfigInfo(String s) {
+                    // 2.发生变化后就拿到变化值
+                    System.out.println("service-order.yaml 中改变了，改变内容为：" + s);
+                    // 3.发送邮件
+                    System.out.println("邮件通知（模拟）......");
+                }
+            });
+        };
+    }
+
+    public static void main(String[] args) {
+        SpringApplication.run(OrderMainApplication.class, args);
+    }
+}
+```
+
+当我们改变 Nacos 中的配置文件的文件具体内容之后，后端输出了以下内容，证明它监听到了。
+
+```
+service-order.yaml 中改变了，改变内容为：order:
+  timeout: 3min
+  auto-confirm: 3d
+邮件通知（模拟）......
+```
+
+## 2.11. Nacos ——配置冲突问题
+
+若 Nacos 中的数据集和 application.yaml 中有相同的配置项，哪个会生效？
+
+我们可以直接测试，在 application.yaml 中加入新的配置：
+
+```yaml
+order:
+  timeout: asd
+  auto-confirm: 1jkdas
+```
+
+而在 Nacos 配置中心中的数据是这样的：
+
+```yaml
+order:
+  timeout: 3min
+  auto-confirm: 3d
+```
+
+打开浏览器，输入：http://localhost:8000/config （端口改为 8001 也可），可以看到，返回的数据是这样：
+
+```
+orderTimeout=3min,orderAutoConfirm=3d
+```
+
+证明了，当这两个地方都配置了相同的数据项时，会生效 Nacos 配置中心的。
+
+它遵循的是，外部优先。项目启动时，会将所以的配置项合并（包括外部的，内部的），有冲突的数据项，就会合并优先度高的数据，整个整体合并之后，就是我们的配置项，会存入环境变量当中，然后，我们的程序会从环境变量中获取配置值。
+
+此外，还遵循先导入的优先，假如我们的数据是这样的：
+
+```yaml
+spring:
+  config:
+    import:
+      - nacos:service-order1.yaml
+      - nacos:service-order2.yaml
+```
+
+那么若 1 和 2 的配置有冲突，则会选择 1 中的值。
+
+## 2.12. Nacos ——配置中心的数据隔离
+
+需求：假设我们的项目有多套环境，比如 test 、dev 和 prod，即 测试、开发和生产环境，项目中每个微服务的配置信息在每套环境上的值可能不一样，要求每个环境中，配置文件的配置都不一样，项目需要根据不同的环境，切换相对应的配置。
+
+如果要完成以上需求，其中的难点是如何：
+
+- 区分多套环境
+- 区分多种微服务
+- 区分多种配置
+- 按需加载配置
+
+Nacos 的解决方案：
+
+- 用名称空间区分多套环境
+- 用 Group 区分多种微服务
+- 用 Data-id 区分多种配置
+- 使用 SpringBoot 激活对应环境的配置
+
+切换环境时，只需要这样，在 下面的 namespace 处切换，group 写在对应的配置文件后面
+
+```yaml
+spring:
+  profiles:
+    # 代表现在是 test 环境
+    active: test
+  cloud:
+    nacos:
+      config:
+        # 标记 namespace，和上边的环境绑定，是 test，若上边未指定，则默认为 dev
+        namespace: ${spring.profiles.active:dev}
+        import-check:
+          # 使用这种切换环境的方式时，要把检查配置关闭
+          enabled: false
+
+---
+ spring:
+  config:
+    import:
+      - nacos:service-order1.yaml?group=order
+      - nacos:service-order2.yaml?group=order
+    activate:
+      # 上边的 import 仅在 test 环境时激活
+      on-profile: test
+      
+---
+spring:
+  config:
+    import:
+      - nacos:service-order1.yaml?group=order
+      - nacos:service-order2.yaml?group=order
+      - nacos:service-order3.yaml?group=order
+    activate:
+      # 上边的 import 仅在 dev 环境时激活
+      on-profile: dev
+```
 
 # 3. OpenFeign
 
