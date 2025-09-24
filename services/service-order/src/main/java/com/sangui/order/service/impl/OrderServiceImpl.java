@@ -2,11 +2,11 @@ package com.sangui.order.service.impl;
 
 
 import com.sangui.order.bean.Order;
+import com.sangui.order.feign.ProductFeignClient;
 import com.sangui.order.service.OrderService;
 import com.sangui.product.bean.Product;
 import jakarta.annotation.Resource;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.cloud.client.ServiceInstance;
 import org.springframework.cloud.client.discovery.DiscoveryClient;
 import org.springframework.cloud.client.loadbalancer.LoadBalancerClient;
@@ -27,6 +27,9 @@ import java.util.List;
 @Service
 public class OrderServiceImpl implements OrderService {
     @Resource
+    ProductFeignClient productFeignClient;
+
+    @Resource
     LoadBalancerClient loadBalancerClient;
 
     @Resource
@@ -37,8 +40,10 @@ public class OrderServiceImpl implements OrderService {
 
     @Override
     public Order createOrder(Long productId, Long userId) {
-        // 调用远程获取商品的方法
-        Product product = getProductFromRemoteWithLoadBalanceAnnotation(productId);
+        // 之前的调用远程获取商品的方法
+        // Product product = getProductFromRemoteWithLoadBalanceAnnotation(productId);
+        // 调用 openFeign 远程获取商品的方法
+        Product product = productFeignClient.getProductById(productId);
 
         Order order = new Order();
         order.setId(1011L);
@@ -110,4 +115,8 @@ public class OrderServiceImpl implements OrderService {
         // 2、发送远程请求
         return restTemplate.getForObject(url, Product.class);
     }
+
+
+
+
 }

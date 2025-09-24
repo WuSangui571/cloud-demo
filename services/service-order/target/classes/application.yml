@@ -7,7 +7,7 @@ spring:
       # Nacos 地址，不配置也行，默认是本地的 8848 端口
       server-addr: 127.0.0.1:8848
   config:
-    # 添加 Nacos 配置，项目启动后，导入 service-order.yml 这个配置文件
+    # 添加 Nacos 配置，项目启动后，导入 service-order.yaml 这个配置文件
     import:
       - nacos:service-order.yaml
 
@@ -15,7 +15,11 @@ server:
   # 设置这个微服务项目的端口号
   port: 8000
 
-order:
-  timeout: asd
-  auto-confirm: 1jkdas
+logging:
+  level:
+    # 指定 feign 接口所在的包的日志级别为 debug 级别
+    com.sangui.order.feign: debug
 
+feign:
+  sentinel:
+    enabled: true

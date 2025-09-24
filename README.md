@@ -1427,6 +1427,649 @@ spring:
 
 # 3. OpenFeign
 
+OpenFeign，是一种 Declarative REST Client，即声明式 Rest 客户端，与之对应的是编程式 Rest 客户端，比如 RestTemplate。
+
+上一章节学习 Nacos 的过程之中，就接触过 RestTemplate，整个远程调用的流程需要自己手动编码。之前的流程是：
+
+1. 使用 discoveryClient 获取微服务的所有列表
+2. 在这些列表中随便挑一个（实现负载均衡）
+3. 使用 restTemplate，给挑中的地址发送请求
+4. 得到对方响应的数据
+
+现在，我们使用声明式 Rest 客户端，无需再用这些流程，只需要一些简单的注解，就能给远程发送请求。比如：
+
+1. 指定**远程地址**
+
+   @FeignClient
+
+2. 指定**请求方式**
+
+   @GetMapping、@PostMapping、@DeleteMapping ...
+
+3. 指定**携带数据**
+
+   @RequestHeader、@RequestParam、@RequestBody ...
+
+4. 指定**结果返回**
+
+   响应模型
+
+你会发现，这些其实复用了 SpringMVC 的那一套。
+
+## 3.1. openFeign 的远程调用
+
+在没有学习 openFeign 的时候，我们远程调用是这样的：
+
+我们有两个服务，一个订单服务，一个商品服务。订单服务中，准备给商品服务发送请求，请求方式是 Get，地址是： http://service-product/product/{productId} ，商品服务响应给订单服务一个商品类，代码如下：
+
+```java
+/**
+ * 基于注解的负载均衡远程获取商品信息
+ * @param productId 商品 Id
+ * @return 商品信息
+ */
+private Product getProductFromRemoteWithLoadBalanceAnnotation(Long productId) {
+
+    // 确定 url，这里直接写 service-product 这个微服务名就好，restTemplate 会自动负载均衡对应的微服务
+    String url = "http://service-product/product/" + productId;
+    // 上述 url 为 http://localhost:????/product/{productId}
+
+    // 2、发送远程请求
+    return restTemplate.getForObject(url, Product.class);
+}
+```
+
+现在开始使用 openFeign 发送远程请求。
+
++ **Step1 添加依赖**
+
+  ```xml
+  <!--远程调用-->
+  <dependency>
+      <groupId>org.springframework.cloud</groupId>
+      <artifactId>spring-cloud-starter-openfeign</artifactId>
+  </dependency>
+  ```
+
+  之前使用 RestTemplate 来远程调用时，也是引入这个依赖。
+
++ **Step2 开启远程调用功能**
+
+  在订单的主程序的入口类中，加入 @EnableFeignClients 注解，开启 Feign 的远程调用，如：
+
+  ```java
+  // 开启 Feign 的远程调用
+  @EnableFeignClients
+  @EnableDiscoveryClient
+  @SpringBootApplication
+  public class OrderMainApplication {
+  	// ......略
+  }
+  ```
+
++ **Step3 添加 Feign 客户端**
+
+  类似之前的 SpringMVC 中的 Controller 的写法，写下我们的 Feign 客户端：
+
+  ```java
+  package com.sangui.order.feign;
+  
+  
+  import com.sangui.product.bean.Product;
+  import org.springframework.cloud.openfeign.FeignClient;
+  import org.springframework.web.bind.annotation.GetMapping;
+  import org.springframework.web.bind.annotation.PathVariable;
+  
+  /**
+   * @Author: sangui
+   * @CreateTime: 2025-09-24
+   * @Description: 调用商品服务的用 Feign 实现的远程调用客户端接口
+   * @Version: 1.0
+   */
+  // 标记这是个 Feign 客户端，里面的 value 的值表示要远程调用的微服务的名字
+  @FeignClient("service-product")
+  public interface ProductFeignClient {
+      // 和 Controller 中的注解一样，只不过这里是主动发送，在 Controller 中是接收
+      @GetMapping("/product/{productId}")
+      Product getProductById(@PathVariable("productId") Long productId);
+  }
+  ```
+
+  这个远程调用，也是自动负载均衡的。
+
++ **Step4 使用远程调用**
+
+  在 Service 类中调用写好远程调用方法即可，如：
+
+  ```java
+  package com.sangui.order.service.impl;
+  
+  
+  import com.sangui.order.bean.Order;
+  import com.sangui.order.feign.ProductFeignClient;
+  import com.sangui.order.service.OrderService;
+  import com.sangui.product.bean.Product;
+  import jakarta.annotation.Resource;
+  import lombok.extern.slf4j.Slf4j;
+  import org.springframework.cloud.client.ServiceInstance;
+  import org.springframework.cloud.client.discovery.DiscoveryClient;
+  import org.springframework.cloud.client.loadbalancer.LoadBalancerClient;
+  import org.springframework.stereotype.Service;
+  import org.springframework.web.client.RestTemplate;
+  
+  import java.math.BigDecimal;
+  import java.util.Arrays;
+  import java.util.List;
+  
+  /**
+   * @Author: sangui
+   * @CreateTime: 2025-09-22
+   * @Description:
+   * @Version: 1.0
+   */
+  @Slf4j
+  @Service
+  public class OrderServiceImpl implements OrderService {
+      @Resource
+      ProductFeignClient productFeignClient;
+  
+      @Override
+      public Order createOrder(Long productId, Long userId) {
+          // 之前的调用远程获取商品的方法
+          // Product product = getProductFromRemoteWithLoadBalanceAnnotation(productId);
+          // 调用 openFeign 远程获取商品的方法
+          Product product = productFeignClient.getProductById(productId);
+  
+          Order order = new Order();
+          order.setId(1011L);
+          BigDecimal totalAmount = product.getPrice().multiply(new BigDecimal(product.getNumber()));
+          order.setTotalAmount(totalAmount);
+          order.setUserId(userId);
+          order.setNickName("张三");
+          order.setAddress("beijing");
+          order.setProductList(Arrays.asList(product));
+          
+          return order;
+      }
+  }
+  ```
+
+至此，打开浏览器，输入：http://localhost:8000/create?productId=1&userId=2 （端口改为 8001 也可），可以看到，后端依旧可以返回如下数据，说明远程调用成功了！
+
+```json
+{
+  "id": 1011,
+  "totalAmount": 65,
+  "userId": 2,
+  "nickName": "张三",
+  "address": "beijing",
+  "productList": [
+    {
+      "id": 1,
+      "price": 32.5,
+      "productName": "创可贴",
+      "number": 2
+    }
+  ]
+}
+```
+
+小技巧：要编写 Feign 客户端的时候，直接去对应微服务的 Controller 中，复制对应的方法的方法名和 Mapping 注解，不复制方法体。
+
+## 3.2. openFeign 的第三方 API 的远程调用
+
+我购买试用了墨迹天气的全国天气预报实况的接口 API ，我先在 Postman 中试调用此 API，它的 API 的调用规则为：
+
+1. 请求方式为：POST
+
+2. 请求路径为：https://aliv18.data.moji.com/whapi/json/alicityweather/condition
+
+3. 请求参数为：
+
+   + cityId
+
+     可根据文档查询对应城市的 cityId，查找后，沈阳浑南的 cityId 为 284698
+
+   + token
+
+     固定值，为：50b53ff8dd7d9fa320d3d3ca32cf8ed1
+
+4. 认证信息：Authorization
+
+   在 Header 中添加 Authorization 值，该值是实际就是 API 的密匙。
+
+下图就是我使用 Postman 测试的图片。
+
+![image-20250924145409783](README.assets/image-20250924145409783.png)
+
++ **Step1 添加 Feign 客户端**
+
+  还有先前步骤，就是添加 openFeign 的依赖和开启开启远程注解，在上一小节中已说明。
+
+  ```java
+  package com.sangui.order.feign;
+  
+  
+  import org.springframework.cloud.openfeign.FeignClient;
+  import org.springframework.web.bind.annotation.*;
+  
+  /**
+   * @Author: sangui
+   * @CreateTime: 2025-09-24
+   * @Description: 远程调用第三方天气 API 的 Feign 客户端接口
+   * @Version: 1.0
+   */
+  // 第三方 API 中，并没有微服务名字，所以 value 值随意写，但是要写请求地址 url
+  // 使用 HTTP 协议，因为经测试，目标端点 aliv18.data.moji.com 的 HTTPS 证书缺少 SAN 匹配
+  @FeignClient(value = "weather-client", url = "http://aliv18.data.moji.com")
+  public interface WeatherFeignClient {
+      /**
+       *
+       * @param auth 在 Header 中添加 Authorization 值，该值是实际就是 API 的密匙
+       * @param cityId 可根据文档查询对应城市的 cityId，查找后，沈阳浑南的 cityId 为 284698
+       * @param token 固定值，为：50b53ff8dd7d9fa320d3d3ca32cf8ed1
+       * @return 该 city 的实况天气的 json 数据
+       */
+      @PostMapping("/whapi/json/alicityweather/condition")
+      String getWeather(@RequestHeader("Authorization") String auth,
+                             @RequestParam("cityId") String cityId,
+                             @RequestParam("token") String token);
+  
+  }
+  ```
+
++ **Step2 测试远程调用**
+
+  ```java
+  package com.sangui.order;
+  
+  
+  import com.sangui.order.feign.WeatherFeignClient;
+  import jakarta.annotation.Resource;
+  import org.junit.jupiter.api.Test;
+  import org.springframework.boot.test.context.SpringBootTest;
+  
+  /**
+   * @Author: sangui
+   * @CreateTime: 2025-09-24
+   * @Description: openFeign 的第三方 API 的远程调用测试
+   * @Version: 1.0
+   */
+  @SpringBootTest
+  public class WeatherTest {
+      @Resource
+      WeatherFeignClient weatherFeignClient;
+  
+      @Test
+      void getWeatherTest() {
+          String weather = weatherFeignClient.getWeather("APPCODE xxxxxxxxxxxxxxxxxxxxx",
+                  "284698", "50b53ff8dd7d9fa320d3d3ca32cf8ed1");
+          System.out.println("沈阳浑南的天气实况：" + weather);
+      }
+  }
+  ```
+
+  输出结果为：
+
+  ```
+  沈阳浑南的天气实况：{"code":0,"data":{"city":{"cityId":284698,"counname":"中国","ianatimezone":"Asia/Shanghai","name":"浑南区","pname":"辽宁省","secondaryname":"沈阳市","timezone":"8"},"condition":{"condition":"晴","conditionId":"5","humidity":"60","icon":"0","pressure":"1003","realFeel":"22","sunRise":"2025-09-24 05:36:00","sunSet":"2025-09-24 17:41:00","temp":"24","tips":"冷热适宜，感觉很舒适。","updatetime":"2025-09-24 15:15:08","uvi":"3","vis":"30000","windDegrees":"225","windDir":"西南风","windLevel":"4","windSpeed":"6.69"}},"msg":"success","rc":{"c":0,"p":"success"}}
+  ```
+
+思考：这里的第三方的 API 的调用中，使用了负载均衡吗？
+
+我们之前使用的自己的程序的远程调用中，肯定使用了负载均衡，它使用的是客户端的负载均衡，就是说，在请求的之前，我们就会选择合适的微服务来使负载均衡，
+
+而我们这里选用第三方的 API 中，我们无法得知这第三方的服务器的具体情况，就无法进行负载均衡，但是，这个第三方在接收到一个请求之后，还是会进行负载均衡的，这就叫做服务端的负载均衡。
+
+也就是说，两者都用了负载均衡，只不过调用我们自己的程序，使用的使客户端负载均衡；调用第三方的 API ，使用的是服务端的负载均衡。
+
+## 3.3. openFeign 的进阶用法
+
+1. **日志**
+
+   开启日志的方法：
+
+   ```yaml
+   logging:
+     level:
+       # 指定 feign 接口所在的包的日志级别为 debug 级别
+       indi.mofan.order.feign: debug
+   ```
+
+   向 Spring 容器中注册 `feign.Logger.Level` 对象：
+
+   ```java
+   @Bean
+   public Logger.Level feignlogLevel() {
+       // 指定 OpenFeign 发请求时，日志级别为 FULL
+       return Logger.Level.FULL;
+   }
+   ```
+
+   这样，openFeign 每发送一个请求，就能看到对应发送的日志。
+
+   将之前天气的例子加入日志，会发现输出的是这样的：
+
+   ```
+   2025-09-24T15:58:17.077+08:00 DEBUG 16272 --- [service-order] [           main] c.sangui.order.feign.WeatherFeignClient  : [WeatherFeignClient#getWeather] ---> POST http://aliv18.data.moji.com/whapi/json/alicityweather/condition?cityId=284698&token=50b53ff8dd7d9fa320d3d3ca32cf8ed1 HTTP/1.1
+   2025-09-24T15:58:17.077+08:00 DEBUG 16272 --- [service-order] [           main] c.sangui.order.feign.WeatherFeignClient  : [WeatherFeignClient#getWeather] Authorization: APPCODE xxxxxxxxxxxxxxxxxxxxxxxxxxxx
+   2025-09-24T15:58:17.077+08:00 DEBUG 16272 --- [service-order] [           main] c.sangui.order.feign.WeatherFeignClient  : [WeatherFeignClient#getWeather] ---> END HTTP (0-byte body)
+   2025-09-24T15:58:17.264+08:00 DEBUG 16272 --- [service-order] [           main] c.sangui.order.feign.WeatherFeignClient  : [WeatherFeignClient#getWeather] <--- HTTP/1.1 200 OK (186ms)
+   2025-09-24T15:58:17.264+08:00 DEBUG 16272 --- [service-order] [           main] c.sangui.order.feign.WeatherFeignClient  : [WeatherFeignClient#getWeather] connection: keep-alive
+   2025-09-24T15:58:17.264+08:00 DEBUG 16272 --- [service-order] [           main] c.sangui.order.feign.WeatherFeignClient  : [WeatherFeignClient#getWeather] content-length: 582
+   2025-09-24T15:58:17.264+08:00 DEBUG 16272 --- [service-order] [           main] c.sangui.order.feign.WeatherFeignClient  : [WeatherFeignClient#getWeather] content-type: text/html;charset=UTF-8
+   2025-09-24T15:58:17.264+08:00 DEBUG 16272 --- [service-order] [           main] c.sangui.order.feign.WeatherFeignClient  : [WeatherFeignClient#getWeather] date: Wed, 24 Sep 2025 07:58:14 GMT
+   2025-09-24T15:58:17.264+08:00 DEBUG 16272 --- [service-order] [           main] c.sangui.order.feign.WeatherFeignClient  : [WeatherFeignClient#getWeather] keep-alive: timeout=25
+   2025-09-24T15:58:17.264+08:00 DEBUG 16272 --- [service-order] [           main] c.sangui.order.feign.WeatherFeignClient  : [WeatherFeignClient#getWeather] server: MJWS/Weather4.0
+   2025-09-24T15:58:17.264+08:00 DEBUG 16272 --- [service-order] [           main] c.sangui.order.feign.WeatherFeignClient  : [WeatherFeignClient#getWeather] vary: Accept-Encoding
+   2025-09-24T15:58:17.264+08:00 DEBUG 16272 --- [service-order] [           main] c.sangui.order.feign.WeatherFeignClient  : [WeatherFeignClient#getWeather] x-ca-request-id: 9B47AD2B-108B-43ED-8129-E044DF0189B5
+   2025-09-24T15:58:17.264+08:00 DEBUG 16272 --- [service-order] [           main] c.sangui.order.feign.WeatherFeignClient  : [WeatherFeignClient#getWeather] 
+   2025-09-24T15:58:17.265+08:00 DEBUG 16272 --- [service-order] [           main] c.sangui.order.feign.WeatherFeignClient  : [WeatherFeignClient#getWeather] {"code":0,"data":{"city":{"cityId":284698,"counname":"中国","ianatimezone":"Asia/Shanghai","name":"浑南区","pname":"辽宁省","secondaryname":"沈阳市","timezone":"8"},"condition":{"condition":"晴","conditionId":"5","humidity":"59","icon":"0","pressure":"1003","realFeel":"24","sunRise":"2025-09-24 05:36:00","sunSet":"2025-09-24 17:41:00","temp":"24","tips":"冷热适宜，感觉很舒适。","updatetime":"2025-09-24 15:50:08","uvi":"4","vis":"30000","windDegrees":"180","windDir":"南风","windLevel":"2","windSpeed":"3.11"}},"msg":"success","rc":{"c":0,"p":"success"}}
+   2025-09-24T15:58:17.265+08:00 DEBUG 16272 --- [service-order] [           main] c.sangui.order.feign.WeatherFeignClient  : [WeatherFeignClient#getWeather] <--- END HTTP (582-byte body)
+   沈阳浑南的天气实况：{"code":0,"data":{"city":{"cityId":284698,"counname":"中国","ianatimezone":"Asia/Shanghai","name":"浑南区","pname":"辽宁省","secondaryname":"沈阳市","timezone":"8"},"condition":{"condition":"晴","conditionId":"5","humidity":"59","icon":"0","pressure":"1003","realFeel":"24","sunRise":"2025-09-24 05:36:00","sunSet":"2025-09-24 17:41:00","temp":"24","tips":"冷热适宜，感觉很舒适。","updatetime":"2025-09-24 15:50:08","uvi":"4","vis":"30000","windDegrees":"180","windDir":"南风","windLevel":"2","windSpeed":"3.11"}},"msg":"success","rc":{"c":0,"p":"success"}}
+   ```
+
+2. **超时控制**
+
+   发送请求的微服务 A，给微服务 B 发送一个请求，微服务 B 因为若干原因无法响应或连接不上了，微服务 A 就有可能引发服务雪崩的问题，也就是 A 因为 B 的慢，导致了 A 在等 B，或许还有个 C 在等 A，这就导致了因为一个微服务的不可用，整个项目停摆了。为了避免出现这种情况，引入了超时控制机制。就是服务 A 会有一个限时等待，若超过这个时间，便会中断这次调用，返回错误信息或返回默认值（使用 Sentinel）。
+
+   一次请求其实有多个步骤：
+
+   1. A、B 之间建立连接
+   2. A 发送请求
+   3. B 处理请求
+   4. B 返回给 A 响应
+
+   我们的超时，共有两种：
+
+   + **连接超时**（connectTimeout），默认 10 秒。
+
+     连接超时，即步骤 1 的时间超时。
+
+   + **读取超时**（readTimeout），默认 60 秒。
+
+     读取超时，即步骤 2、3、4 的时间的和超时。
+
+   写了一个简易的程序，模拟一下读取超时，即在微服务 B （service-product）中加入模拟超时。
+
+   ```java
+   package com.sangui.product.service.impl;
+   
+   
+   import com.sangui.product.bean.Product;
+   import com.sangui.product.service.ProductService;
+   import org.springframework.stereotype.Service;
+   
+   import java.math.BigDecimal;
+   import java.util.concurrent.TimeUnit;
+   
+   /**
+    * @Author: sangui
+    * @CreateTime: 2025-09-22
+    * @Description: 商品的 Service 类的实现类
+    * @Version: 1.0
+    */
+   @Service
+   public class ProductServiceImpl implements ProductService {
+       @Override
+       public Product getProductById(Long productId) {
+           try {
+               // 模拟读取超时，设置 100 秒
+               TimeUnit.SECONDS.sleep(100);
+           } catch (InterruptedException e) {
+               throw new RuntimeException(e);
+           }
+   
+           return new Product(productId,new BigDecimal("32.5"),"创可贴",2);
+       }
+   }
+   ```
+
+   微服务 A （service-order）发送请求之后，浏览器一直在转圈，直到 60 秒之后，后端爆出 500 错误提示，并放回了错误信息。
+
+   如果需要修改默认超时时间，在配置文件中进行如下配置：
+
+   ```yaml
+   spring:
+     cloud:
+       openfeign:
+         client:
+           config:
+             # 默认配置
+             default:
+               logger-level: full
+               connect-timeout: 1000
+               read-timeout: 2000
+             # 具体 feign 客户端的超时配置
+             service-product:
+               logger-level: full
+               # 连接超时，3 秒
+               connect-timeout: 3000
+               # 读取超时，5 秒
+               read-timeout: 5000
+   ```
+
+3. **重试机制**
+
+   远程调用超时失败后，还可以进行多次尝试，如果某次成功则返回 ok；如果多次尝试后依然失败则结束调用，返回错误。
+
+   OpenFeign 底层默认使用 `NEVER_RETRY`，即从不重试策略。
+
+   若我们要开启重试机制，则需向 Spring 容器中添加 `Retryer` 类型的 Bean：
+
+   ```java
+   @Bean
+   public Retryer retryer() {
+       return new Retryer.Default();
+   }
+   ```
+
+   这里看 `Retryer.Default` 的源代码，这种默认实现如下：
+
+   ```java
+   public Default() {
+       // 间隔 100 毫秒，最大间隔 1 秒，最大尝试 5 次
+       this(100L, TimeUnit.SECONDS.toMillis(1L), 5);
+   }
+   ```
+
+   此重试规则是：
+
+   - 重试间隔 100ms
+   - 最大重试间隔 1s
+   - 最多重试 5 次。新一次重试间隔是上一次重试间隔的 1.5 倍，但不能超过最大重试间隔，即上面的 1 s。
+
+   注意是给同一个微服务实例发送重试请求的！（中途不会因为开启了负载均衡而换别的实例）
+
+4. **拦截器**
+
+   openFeign 可以对远程调用请求之前这个节点，和对方响应回来之后的这个节点，都有拦截器可以使用。
+
+   对于发送远程调用请求之前这个节点的拦截器，称之为**请求拦截器**，可以对请求做出修改，比如加入 token 之类的操作。
+
+   对于对方响应回来之后的这个节点的拦截器，称之为**响应拦截器**，可以在接收响应之前，修改这个响应的数据，对响应作出预处理。响应拦截器一般用的不多。
+
+   以请求拦截器为例，自定义的请求拦截器需要实现 `RequestInterceptor` 接口，并重写 `apply()` 方法：
+
+   ```java
+   package com.sangui.order.interceptor;
+   
+   
+   import feign.RequestInterceptor;
+   import feign.RequestTemplate;
+   
+   import java.util.UUID;
+   
+   /**
+    * @Author: sangui
+    * @CreateTime: 2025-09-24
+    * @Description: 请求拦截器，用于增加请求头的 XToken
+    * @Version: 1.0
+    */
+   public class XTokenRequestInterceptor implements RequestInterceptor {
+       @Override
+       public void apply(RequestTemplate template) {
+           System.out.println("XTokenRequestInterceptor execute!");
+           template.header("X-Token", UUID.randomUUID().toString());
+       }
+   }
+   ```
+
+   要想要该拦截器生效有两种方法：
+
+   1. 在配置文件中配置对应 Feign 客户端的请求拦截器，此时该拦截器只对指定的 Feign 客户端生效
+
+      ```yaml
+      spring:
+        cloud:
+          openfeign:
+            client:
+              config:
+                # 具体 feign 客户端
+                service-product:
+                  # 该请求拦截器仅对当前客户端有效
+                  request-interceptors:
+                    - com.sangui.order.interceptor.XTokenRequestInterceptor
+      ```
+
+   2. 将此请求拦截器添加到 Spring 容器中，此时该拦截器对服务内的所有 Feign 客户端生效
+
+      ```java
+      @Component
+      public class XTokenRequestInterceptor implements RequestInterceptor {
+          // --snip--
+      }
+      ```
+
+   当我们发送请求后，可以从输出和日志看到，请求已经被拦截加了我们要的内容：
+
+   ```
+   XTokenRequestInterceptor execute!
+   2025-09-24T17:11:11.518+08:00 DEBUG 8712 --- [service-order] [nio-8000-exec-1] c.sangui.order.feign.ProductFeignClient  : [ProductFeignClient#getProductById] ---> GET http://service-product/product/1 HTTP/1.1
+   2025-09-24T17:11:11.518+08:00 DEBUG 8712 --- [service-order] [nio-8000-exec-1] c.sangui.order.feign.ProductFeignClient  : [ProductFeignClient#getProductById] X-Token: 1b99b4b5-9106-41ac-8f39-e36e92b1e003
+   2025-09-24T17:11:11.518+08:00 DEBUG 8712 --- [service-order] [nio-8000-exec-1] c.sangui.order.feign.ProductFeignClient  : [ProductFeignClient#getProductById] ---> END HTTP (0-byte body)
+   2025-09-24T17:11:11.668+08:00 DEBUG 8712 --- [service-order] [nio-8000-exec-1] c.sangui.order.feign.ProductFeignClient  : [ProductFeignClient#getProductById] <--- HTTP/1.1 200 (149ms)
+   2025-09-24T17:11:11.668+08:00 DEBUG 8712 --- [service-order] [nio-8000-exec-1] c.sangui.order.feign.ProductFeignClient  : [ProductFeignClient#getProductById] connection: keep-alive
+   2025-09-24T17:11:11.668+08:00 DEBUG 8712 --- [service-order] [nio-8000-exec-1] c.sangui.order.feign.ProductFeignClient  : [ProductFeignClient#getProductById] content-type: application/json
+   2025-09-24T17:11:11.668+08:00 DEBUG 8712 --- [service-order] [nio-8000-exec-1] c.sangui.order.feign.ProductFeignClient  : [ProductFeignClient#getProductById] date: Wed, 24 Sep 2025 09:11:11 GMT
+   2025-09-24T17:11:11.668+08:00 DEBUG 8712 --- [service-order] [nio-8000-exec-1] c.sangui.order.feign.ProductFeignClient  : [ProductFeignClient#getProductById] keep-alive: timeout=60
+   2025-09-24T17:11:11.668+08:00 DEBUG 8712 --- [service-order] [nio-8000-exec-1] c.sangui.order.feign.ProductFeignClient  : [ProductFeignClient#getProductById] transfer-encoding: chunked
+   2025-09-24T17:11:11.668+08:00 DEBUG 8712 --- [service-order] [nio-8000-exec-1] c.sangui.order.feign.ProductFeignClient  : [ProductFeignClient#getProductById] 
+   2025-09-24T17:11:11.668+08:00 DEBUG 8712 --- [service-order] [nio-8000-exec-1] c.sangui.order.feign.ProductFeignClient  : [ProductFeignClient#getProductById] {"id":1,"price":32.5,"productName":"创可贴","number":2}
+   2025-09-24T17:11:11.669+08:00 DEBUG 8712 --- [service-order] [nio-8000-exec-1] c.sangui.order.feign.ProductFeignClient  : [ProductFeignClient#getProductById] <--- END HTTP (58-byte body)
+   ```
+
+5. **Fallback**
+
+   Fallback，即兜底返回。它的作用，就是之前在`超时控制` 中提到过，若超时，返回一个默认值，就是兜底返回。注意，此功能需要整合 Sentinel 才能实现。
+
+   > 超时控制：
+   >
+   > 发送请求的微服务 A，给微服务 B 发送一个请求，微服务 B 因为若干原因无法响应或连接不上了，微服务 A 就有可能引发服务雪崩的问题，也就是 A 因为 B 的慢，导致了 A 在等 B，或许还有个 C 在等 A，这就导致了因为一个微服务的不可用，整个项目停摆了。为了避免出现这种情况，引入了超时控制机制。就是服务 A 会有一个限时等待，若超过这个时间，便会中断这次调用，返回错误信息或**返回默认值（使用 Sentinel）**。
+
+   + **Step1 添加依赖** 
+
+     ```xml
+     <!--Sentinel 依赖-->
+     <dependency>
+         <groupId>com.alibaba.cloud</groupId>
+         <artifactId>spring-cloud-starter-alibaba-sentinel</artifactId>
+     </dependency>
+     ```
+
+   + **Step2 开启配置**
+
+     并在配置文件中开启配置：
+
+     ```yaml
+     feign:
+       sentinel:
+         enabled: true
+     ```
+
+   + **Step3 创建 fallback 类**
+
+     这个 fallback  类，其实就是之前写好的 ProductFeignClient 的具体实现类，需要继承它，写好方法体。类似 Service 接口 和 ServiceImpl 类的形式。
+
+     ```java
+     package com.sangui.order.feign.fallback;
+     
+     
+     import com.sangui.order.feign.ProductFeignClient;
+     import com.sangui.product.bean.Product;
+     
+     import java.math.BigDecimal;
+     
+     /**
+      * @Author: sangui
+      * @CreateTime: 2025-09-24
+      * @Description: ProductFeignClient 接口的 fallback
+      * @Version: 1.0
+      */
+     public class ProductFeignClientFallback implements ProductFeignClient {
+         @Override
+         public Product getProductById(Long productId) {
+             System.out.println("Fallback...");
+     
+             Product product = new Product();
+             product.setId(productId);
+             product.setPrice(new BigDecimal("0"));
+             product.setProductName("未知商品");
+             product.setNumber(0);
+     
+             return product;
+         }
+     }
+     ```
+
+   + **Step4 启用写好的 fallback 类**
+
+     在对于接口的类上，@FeignClient 注解处，加上 fallback = 具体的 fallback  的 class 
+
+     ```java
+     package com.sangui.order.feign;
+     
+     
+     import com.sangui.order.feign.fallback.ProductFeignClientFallback;
+     import com.sangui.product.bean.Product;
+     import org.springframework.cloud.openfeign.FeignClient;
+     import org.springframework.web.bind.annotation.GetMapping;
+     import org.springframework.web.bind.annotation.PathVariable;
+     
+     /**
+      * @Author: sangui
+      * @CreateTime: 2025-09-24
+      * @Description: 调用商品服务的用 Feign 实现的远程调用客户端接口
+      * @Version: 1.0
+      */
+     // fallback 里写的就是兜底的数据返回
+     @FeignClient(value = "service-product", fallback = ProductFeignClientFallback.class)
+     public interface ProductFeignClient {
+         @GetMapping("/product/{productId}")
+         Product getProductById(@PathVariable("productId") Long productId);
+     }
+     ```
+
+   此时，当我们启动项目，将 service-product 服务中的代码故意阻塞，访问浏览器，输入：http://localhost:8000/create?productId=1&userId=2 （端口改为 8001 也可），等待许久之后，可以看到，后端返回如下数据：
+
+   ```json
+   {
+     "id": 1011,
+     "totalAmount": 0,
+     "userId": 2,
+     "nickName": "张三",
+     "address": "beijing",
+     "productList": [
+       {
+         "id": 1,
+         "price": 0,
+         "productName": "未知商品",
+         "number": 0
+       }
+     ]
+   }
+   ```
+
 # 4. Sentinel
 
 # 5. Gateway

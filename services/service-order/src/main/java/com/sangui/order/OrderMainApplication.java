@@ -8,6 +8,7 @@ import org.springframework.boot.ApplicationRunner;
 import org.springframework.boot.SpringApplication;
 import org.springframework.boot.autoconfigure.SpringBootApplication;
 import org.springframework.cloud.client.discovery.EnableDiscoveryClient;
+import org.springframework.cloud.openfeign.EnableFeignClients;
 import org.springframework.context.annotation.Bean;
 
 import java.util.concurrent.Executor;
@@ -19,6 +20,8 @@ import java.util.concurrent.Executors;
  * @Description: 订单微服务的主入口程序
  * @Version: 1.0
  */
+// 开启 Feign 的远程调用
+@EnableFeignClients
 @EnableDiscoveryClient
 @SpringBootApplication
 public class OrderMainApplication {
