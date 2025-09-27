@@ -6,6 +6,12 @@ spring:
     nacos:
       # Nacos 地址，不配置也行，默认是本地的 8848 端口
       server-addr: 127.0.0.1:8848
+    sentinel:
+      transport:
+        # 控制台地址
+        dashboard: localhost:8080
+      # 立即加载服务
+      eager: true
   config:
     # 添加 Nacos 配置，项目启动后，导入 service-order.yaml 这个配置文件
     import:

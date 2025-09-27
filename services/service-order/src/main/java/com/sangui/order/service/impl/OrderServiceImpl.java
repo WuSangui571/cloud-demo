@@ -1,6 +1,7 @@
 package com.sangui.order.service.impl;
 
 
+import com.alibaba.csp.sentinel.annotation.SentinelResource;
 import com.sangui.order.bean.Order;
 import com.sangui.order.feign.ProductFeignClient;
 import com.sangui.order.service.OrderService;
@@ -38,6 +39,8 @@ public class OrderServiceImpl implements OrderService {
     @Resource
     RestTemplate restTemplate;
 
+    // 加入注解，标记为一个资源，取名为：createOrder
+    @SentinelResource(value="createOrder")
     @Override
     public Order createOrder(Long productId, Long userId) {
         // 之前的调用远程获取商品的方法

@@ -2074,6 +2074,194 @@ private Product getProductFromRemoteWithLoadBalanceAnnotation(Long productId) {
 
 # 4. Sentinel
 
+随着微服务的流行，服务和服务之间的稳定性变得越来越重要。Spring Cloud Alibaba Sentinel 以流量为切入点，从流量控制、流量路由、熔断降级、系统自适应过载保护、热点流量防护等多个维度保护服务的稳定性。
+
+Sentinel 是 SpringCloud Alibaba 提供的用于服务保护的框架，服务保护的常见手段就是**限流**和**熔断降级**。
+
+## 4.1. 工作原理
+
+定义规则：
+
+- 主流框架自动适配（Web Servlet、Dubbo、Spring Cloud、gRPC、Spring WebFlux、Reactor），所有 Web 接口均为资源 
+
+- 编程式：SphU API
+
+- 声明式：`@SentinelResource`
+
+定义资源：
+
+- 流量控制（FlowRule）
+
+- 熔断降级（DegradeRule）
+
+- 系统保护（SystemRule）
+
+- 来源访问控制（AuthorityRule）
+
+- 热点参数（ParamFlowRule）
+
+![Sentinel工作原理](README.assets/Sentinel工作原理.svg)
+
+## 4.2. 整合 Sentinel
+
++ **Step1 启动 Dashboard**
+
+  下载本地的 Sentinel ，下载地址：https://github.com/alibaba/Sentinel/releases 。
+
+  下载得到 `sentinel-dashboard-1.8.8.jar` ，在此目录下 ，输入以下命令，以启动 Dashboard：
+
+  ```cmd
+  java -jar sentinel-dashboard-1.8.8.jar
+  ```
+
+  启动完成后，浏览器访问 `http://localhost:8080/`，默认用户与密码均为 `sentinel`。
+
+  ![image-20250927100704537](README.assets/image-20250927100704537.png)
+
++ **Step2 服务整合 Sentinel**
+
+  引入依赖：
+
+  ```xml
+  <dependency>
+      <groupId>com.alibaba.cloud</groupId>
+      <artifactId>spring-cloud-starter-alibaba-sentinel</artifactId>
+  </dependency>
+  ```
+
+  在配置文件中添加：
+
+  ```yaml
+  spring:
+    cloud:
+      sentinel:
+        transport:
+          # 控制台地址
+          dashboard: localhost:8080
+        # 立即加载服务  
+        eager: true
+  ```
+
+  配置完成后启动对应服务，再前往 Sentinel Dashboard 查看，能够看到对应服务信息，如下图。
+
+  ![image-20250927100802605](README.assets/image-20250927100802605.png)
+
+  可以在一个方法上使用 `@SentinelResource` 注解，将其标记为一个「资源」，当方法被调用时，能够在 Dashboard 的「簇点链路」上找到对应的资源，之后在界面上完成对资源的流控、熔断、热点、授权等操作，如：
+
+  ```java
+  package com.sangui.order.service.impl;
+  
+  
+  // import......
+  
+  /**
+   * @Author: sangui
+   * @CreateTime: 2025-09-22
+   * @Description:
+   * @Version: 1.0
+   */
+  @Slf4j
+  @Service
+  public class OrderServiceImpl implements OrderService {
+      // 加入注解，标记为一个资源，取名为：createOrder
+      @SentinelResource(value="createOrder")
+      @Override
+      public Order createOrder(Long productId, Long userId) {
+          // ...略
+      }
+  }
+  ```
+
+  之后我们访问：http://localhost:8000/create?productId=1&userId=2 ，以具体使用。正确访问之后，返回 Sentinel 控制台，点进对于微服务的 `簇点链路`，刷新即可看到这个调用链的过程。
+
+  ![image-20250927102326452](README.assets/image-20250927102326452.png)
+
+## 4.3. 异常处理
+
+![Sentinel异常处理](README.assets/Sentinel异常处理.svg)
+
++ **自定义 web 接口的 Handler**
+
+  当 Web 接口作为资源被流控时，默认情况下会在页面显示：
+
+  ```
+  Blocked by Sentinel (flow limiting)
+  ```
+
+  如果需要自定义异常处理，可以实现 `BlockExceptionHandler` 接口，并将实现类交给 Spring 管理：
+
+  ```java
+  package com.sangui.order.exception;
+  
+  
+  import com.alibaba.csp.sentinel.adapter.spring.webmvc_v6x.callback.BlockExceptionHandler;
+  import com.alibaba.csp.sentinel.slots.block.BlockException;
+  import com.sangui.common.JsonUtils;
+  import com.sangui.common.R;
+  import jakarta.servlet.http.HttpServletRequest;
+  import jakarta.servlet.http.HttpServletResponse;
+  import org.springframework.stereotype.Component;
+  
+  import java.io.PrintWriter;
+  
+  /**
+   * @Author: sangui
+   * @CreateTime: 2025-09-27
+   * @Description: 我的自定义 web 接口的 Handler
+   * @Version: 1.0
+   */
+  @Component
+  public class MyBlockExceptionHandler implements BlockExceptionHandler {
+  
+      @Override
+      public void handle(HttpServletRequest httpServletRequest, HttpServletResponse httpServletResponse, String s, BlockException e) throws Exception {
+          httpServletResponse.setContentType("application/json;charset=utf-8");
+          PrintWriter writer = httpServletResponse.getWriter();
+  
+          // 自定义返回信息
+          R r = R.fail("此服务：" + s + "，被 Sentinel 限制了，原因：" +  e.getClass());
+          // 返回 json 格式的数据
+          writer.write(JsonUtils.toJson(r));
+          writer.flush();
+          writer.close();
+      }
+  }
+  ```
+
+  以 `/create` 接口为例，当其被流控时，页面显示就变成了这样：
+
+  ```json
+  {
+    "code": 500,
+    "msg": "此服务：/create，被 Sentinel 限制了，原因：class com.alibaba.csp.sentinel.slots.block.flow.FlowException",
+    "data": null
+  }
+  ```
+
++ **@SentinelResource**
+
+  当 `@SentinelResource` 注解标记的资源被流控时，默认返回 500 错误页。
+
+  如果需要自定义异常处理，一般可以增加 `@SentinelResource` 注解的以下任意配置：
+
+  - `blockHandler`
+  - `fallback`
+  - `defaultFallback`
+
+  以 `blockHandler` 为例：
+
+## 4.4. 流控规则
+
+
+
+## 4.5. 熔断规则
+
+
+
+## 4.6. 热点规则
+
+
+
 # 5. Gateway
 
 # 6. Seata
