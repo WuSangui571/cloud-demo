@@ -2250,17 +2250,323 @@ Sentinel 是 SpringCloud Alibaba 提供的用于服务保护的框架，服务�
 
   以 `blockHandler` 为例：
 
+  ```java
+  package com.sangui.order.service.impl;
+  
+  
+  // import......
+  
+  /**
+   * @Author: sangui
+   * @CreateTime: 2025-09-22
+   * @Description:
+   * @Version: 1.0
+   */
+  @Slf4j
+  @Service
+  public class OrderServiceImpl implements OrderService {
+  
+      // 加入 blockHandler，设置该方法的兜底回调的方法名
+      @SentinelResource(value="createOrder",blockHandler = "createOrderFallback")
+      @Override
+      public Order createOrder(Long productId, Long userId) {
+          // ...略
+      }
+      // createOrder 的兜底回调
+      public Order createOrderFallback(Long productId, Long userId, BlockException e) {
+          Order order = new Order();
+          order.setId(-1L);
+          order.setTotalAmount(new BigDecimal("0.00"));
+          order.setUserId(userId);
+          order.setNickName("未知用户");
+          order.setAddress("未知地址，" + e.getClass());
+          return order;
+      }
+  }
+  ```
+
++ Feign 接口
+
+  在上一个章节 Nacos 中讲过。就是写一个 fallback  类，其实就是之前写好的 ProductFeignClient 的具体实现类，需要继承它，写好方法体。类似 Service 接口 和 ServiceImpl 类的形式。
+
 ## 4.4. 流控规则
 
+流控，即流量控制（FlowRule），用于限制多余请求，从而保护系统资源不被耗尽。
 
+![image-20250927144531609](README.assets/image-20250927144531609.png)
+
+1. **阈值类型**
+
+   ![image-20250927145226619](README.assets/image-20250927145226619.png)
+
+   Sentinel 的流控阈值规则有两种：
+
+   + QPS：Queries Per Second，用于限制资源每秒的请求次数，防止突发流量，应用于高频短时接口（如 API 网关）。当每秒的请求数超过设定的阈值时，就会触发流控。比如上图设置的 QPS = 5，就表示每秒最多允许 5 个请求。
+
+   + 并发线程数：用于限制同时处理该资源的线程数（即并发数），保护系统资源（线程池），应用于耗时操作（如数据库查询）。当处理该资源的线程数超过阈值时，就会触发流控。比如设置并发线程数为 5，表示最多允许 5 个线程同时处理该资源。
+
+   当勾选「是否集群」时，有两种集群阈值模式可供选择：
+
+   + 单机均摊：将设置的「均摊阈值」均摊到每个节点。以上图为例，假设集群有 3 个节点，那么每个节点的阈值都是 5；
+
+   + 总体阈值：整个集群共享设置的「均摊阈值」。假设集群有 3 个节点，这 3 个节点的的总阈值只有 5，比如按 `2个、2个、1个` 的形式将阈值均摊到每个节点。
+
+2. **流控模式**
+
+   ![image-20250927145633352](README.assets/image-20250927145633352.png)
+
+   配置流控规则时，可以点击下方的「高级选项」，在这里可以配置「流控模式」，共有三种可选项：
+
+   1. 直接：默认选项。
+   2. 关联：关联资源超阈值时，限流当前资源。
+   3. 链路：仅对于某一路径下的资源访问生效。使用时需要在配置文件中设置 `spring.cloud.sentinel.web-context-unify=false`。
+
+   调用关系包括调用方、被调用方；一个方法又可能会调用其他方法，形成一个调用链路的层次关系；有了调用链路的统计信息，可以衍生出多种流量控制手段。
+
+   这三个里的`直接`很好理解。详细说一下另外两个，即**关联** 和 **链路**。
+
+   + 说一下里面的`链路`。实际举例其中的链路。有一个 createOrder 资源，通过普通的 /create 进入（不限流），也可以是通过秒杀 /seckill 进入（限流）。
+
+     ![image-20250927153050019](README.assets/image-20250927153050019.png)
+
+     ```java
+     package com.sangui.order.controller;
+     
+     
+     // import......
+     
+     @RestController
+     public class OrderController {
+         // .....略
+     
+         @GetMapping("/create")
+         public Order createOrder(@RequestParam("productId") Long productId,
+                                  @RequestParam("userId") Long userId) {
+             return orderService.createOrder(productId, userId);
+         }
+     
+         // 秒杀订单
+         @GetMapping("/seckill")
+         public Order seckill(@RequestParam("productId") Long productId,
+                                  @RequestParam("userId") Long userId) {
+             Order order = orderService.createOrder(productId, userId);
+             order.setId(Long.MAX_VALUE);
+             System.out.println("我是秒杀");
+             return order;
+         }
+     }
+     ```
+
+     看代码，他们的实际调用都一样，但是秒杀的功能却想设置成限流的，根据他们走的不同链路，设置限流方法。
+
+     在注解中先开启：
+
+     ```yaml
+     spring:
+       cloud:
+         sentinel:
+           # false 代表不要不分割请求链路，即分割请求链路
+           web-context-unify: false
+     ```
+
+     打开服务后，发别访问两个地址：http://localhost:8000/create?productId=1&userId=2 和 http://localhost:8000/seckill?productId=1&userId=2 之后，看我们 Sentinel 的控制台簇点链路，如下图所示，可以分别看到两个的具体情况。
+
+     ![image-20250927154118029](README.assets/image-20250927154118029.png)
+
+     随便选择其中的资源名叫做 createOrder 的资源，为其限流，限流模式选为链路，入口资源为 /seckill。现在，测试刚才两个链接之后，发现 seckill 就限流了，create 就没有限流。
+
+   + **关联**
+
+     说一下里面的`关联`。实际举例其中的关联。有一个 **读** 和一个 **写** 的操作，因为在实际操作中，写一般耗时较长，而读较快，并且两者又是强关联的，先读才能写。于是当写的东西特别多的时候，就给读限流，但是，当写的东西不多的时候，就不给读限流。
+
+     ![image-20250927155230556](README.assets/image-20250927155230556.png)
+
+     ```java
+     package com.sangui.order.controller;
+     
+     
+     // import......
+     
+     @RestController
+     public class OrderController {
+         // .....略
+     
+        // 写数据到数据库
+         @GetMapping("/writeDb")
+         public String writeDb() {
+             return "writeDb success";
+         }
+     
+         // 读数据
+         @GetMapping("/readDb")
+         public String read() {
+             return "readDb success";
+         }
+     }
+     ```
+
+     这时，运行程序，在 Sentinel 控制台中为 /readDb 新增流控规则，模式设置为关联，关联资源设置为 /writeDb。
+
+     这里，看似是直接对 /readDb 限流，但是，当我们大量请求 /readDb 时，并不会限流。此时，当我们一直频繁访问 /writeDb，再马上访问 /readDb 时，/readDb 页面就会限流了。
+
+3. **流控效果**
+
+   打开流控规则中的高级配置后，还可以配置「流控效果」，同样有三种选项：
+
+   + **快速失败**：默认选项。注意，只有该选项支持「流控模式」（直接、关联、链路）的设置。
+
+   + **Warm Up**：需要设置 period（单位：秒），初始 QPS 较低，随后在 period 时间段内逐步提升至设定的 QPS 。例如设定 QPS 值为 5 、period 时间 3 秒，初始时 QPS 较低，3 秒内逐步升至 5 QPS。注意，若选择了此模式，「流控模式」中只能选择「直接」。
+
+   + **排队等待**：需要设置 timeout（单位：秒），每秒只处理设置的 QPS 数量的请求，多余的请求会等待，当存在请求等待的实际超过设定的 timeout 值时，请求会被拒绝。注意，若选择了此模式，「流控模式」中只能选择「直接」。
+
+   附加，如何测试一个请求的压力测试？
+
+   使用 postman 工具。先用正常的方式创建要压力测试的请求，再如下图所示：
+
+   + 点击 Runner
+   + 将需要压力测试的 api 拖入
+   + 输入要执行的次数
+   + 输入间隔时间
+   + 启动
+
+   ![image-20250927165229758](README.assets/image-20250927165229758.png)
 
 ## 4.5. 熔断规则
 
+熔断规则，即 DegradeRule。
 
+使用熔断规则可以配置熔断降级，用于：
+
+- 切断不稳定调用
+- 快速返回不积压
+- 避免雪崩效应
+
+**最佳实践：** 熔断降级作为保护自身的手段，通常在客户端（调用端）进行配置。
+
+熔断降级里的核心组件是「断路器」，其工作原理如下：
+
+![断路器工作原理](README.assets/断路器工作原理.svg)
+
+Sentinel 提供了三种熔断策略：
+
++ 慢调用比例
+
++ 异常比例
+
++ 异常数
+
+下面就来详细展开一下。
+
+1. **慢调用比例**
+
+   ![image-20250927172256533](README.assets/image-20250927172256533.png)
+
+   在 10000ms（图中的统计时长） 内，若请求数量大于等于 5 次，且有 70%（0.7 的比例阈值）的请求的最大响应时间超过 200ms（图中的最大 RT），则进行 30s 的熔断。熔断 30s 之后进入半开状态，再进行一个探测，若可以访问，则继续正常流程，若不能访问，则再熔断30s，重复此流程。
+
+
+2. **异常比例**
+
+   在远程调用的目标接口里添加 `int i = 1 / 0;` 模拟远程调用异常。
+
+   此时尚未配置任何熔断规则，然后远程调用存在异常的接口，此时会触发使用 OpenFeign 配置的兜底回调。
+
+   换句话说，没有配置任何熔断规则可以触发兜底回调，而配置熔断规则也是为了触发兜底回调，那岂不是配不配置熔断规则都可以？
+
+   当 A 服务向 B 服务发送请求时，远程调用的 B 服务接口中存在异常，此时触发兜底回调。
+
+   在这个过程，由 A 服务发送的请求依旧会打到 B 服务上。
+
+   而配置熔断规则后，A 服务发送的请求快速失败，立即出发兜底回调，不会再把请求打到 B 服务上。
+
+   ![image-20250927172627847](README.assets/image-20250927172627847.png)
+
+   在 5000ms（图中的统计时长） 内，若请求数量大于等于 5 次，且有 80%（0.8 的比例阈值）的请求产生了异常，则进行 30s 的熔断。熔断 30s 之后进入半开状态，再进行一个探测，若可以访问，则继续正常流程，若不能访问，则再熔断30s，重复此流程。
+
+3. **异常数**
+
+   ![image-20250927172847952](README.assets/image-20250927172847952.png)
+
+   「异常数」的熔断策略与「异常比例」很类似，只不过「异常数」是直接统计异常个数，就算统计时长内产生了一百万个请求，但只要有 10 个请求出现了异常，也会触发熔断。
 
 ## 4.6. 热点规则
 
+所谓热点，即经常访问的数据。很多时候希望统计某个热点数据中访问频次最高的 Top K 数据，并对其访问进行限制。比如：
 
+- 商品 ID 为参数，统计一段时间内最常购买的商品 ID 并进行限制
+- 用户 ID 为参数，针对一段时间内频繁访问的用户 ID 进行限制
+
+热点参数限流会统计传入参数中的热点参数，并根据配置的限流阈值与模式，对包含热点参数的资源调用进行限流。
+
+**热点参数限流可以看做是一种特殊的流量控制，仅对包含热点参数的资源调用生效。** 
+
+![Sentinel热点规则概述](README.assets/Sentinel热点规则概述.png)
+
+现有如下需求：
+
+- 每个用户秒杀 QPS 不得超过 1（秒杀下单时，userId 级别）
+- 6 号用户是 vvip，不限制 QPS（例外情况）
+- 666 号商品是下架商品，不允许访问
+
+先写 Controller ，设定正常的 seckill 方法，写上 @SentinelResource 注解，并配上它的兜底回调，程序如下：
+
+```java
+package com.sangui.order.controller;
+
+
+// import......
+
+@RestController
+public class OrderController {
+    // .....略
+
+    // 秒杀订单
+    @GetMapping("/seckill")
+    // 设置 SentinelResource ，名字需设计的和上面的 /seckill 不一样
+    @SentinelResource(value = "seckill-order",fallback = "seckillFallback")
+    public Order seckill(@RequestParam("productId") Long productId,
+                             @RequestParam("userId") Long userId) {
+        Order order = orderService.createOrder(productId, userId);
+        order.setId(Long.MAX_VALUE);
+        return order;
+    }
+
+
+    // 秒杀订单的兜底回调
+    @GetMapping("/seckill")
+    public Order seckillFallback(@RequestParam("productId") Long productId,
+                                 @RequestParam("userId") Long userId, BlockException e) {
+        Order order = new Order();
+        order.setId(10086L);
+        order.setAddress(e.getClass().getName());
+        System.out.println("我是 seckill 的兜底回调");
+        return order;
+    }
+}
+```
+
+启动后，浏览：http://localhost:8000/seckill?productId=1&userId=2 。查看 Sentinel 控制台，为 seckill-order 创建热点规则
+
+![image-20250927174644804](README.assets/image-20250927174644804.png)
+
+![image-20250927175301541](README.assets/image-20250927175301541.png)
+
+为第 1 个参数（即图中参数索引的值，值最小是 0），设定阈值为 1 （即图中的单机阈值的值）。即在我们的程序（Controller）中，方法对应的第 1 个参数就是`userId` ，代表的是每 1 秒（图中统计窗口时长）每个 userId 只能有一个（图中单机阈值）请求 。（这里就完成了需求1：每个用户秒杀 QPS 不得超过 1（秒杀下单时，userId 级别））
+
+再次修改热点规则，增加高级选项。
+
+![image-20250927180256444](README.assets/image-20250927180256444.png)
+
+如图，选择参数类型是long，因为我们的第 1 个参数是 userId，类型是 long，设定参数值为6，限流阈值设定一个很高的值（这里就完成了需求2：6 号用户是 vvip，不限制 QPS（例外情况））。
+
+现在还有最后一个需求「666 号商品是下架商品，不允许访问」，这其实相当于：对 666 号商品进行流控（限流阈值为 0，不允许访问），对其他商品不进行流控（或阈值非常大）。
+
+我们还是在 seckill-order 上，新建一个热点规则，如图：
+
+![image-20250927180737181](README.assets/image-20250927180737181.png)
+
+单机阈值设置的很高，因为第 0 个参数（即商品）我们不限流，参数额外项中，设置 long（商品id 的数据类型），参数值666（商品id 为666的商品）,设置流量为 0（这里就完成了需求3：666 号商品是下架商品，不允许访问）。
+
+浏览：[localhost:8000/seckill?productId=666&userId=2](http://localhost:8000/seckill?productId=666&userId=2)  时，即会报出异常。userId=6时也会异常。
 
 # 5. Gateway
 

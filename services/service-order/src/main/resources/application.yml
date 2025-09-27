@@ -12,6 +12,8 @@ spring:
         dashboard: localhost:8080
       # 立即加载服务
       eager: true
+      # false 代表不要不分割请求链路，即分割请求链路
+      web-context-unify: false
   config:
     # 添加 Nacos 配置，项目启动后，导入 service-order.yaml 这个配置文件
     import:

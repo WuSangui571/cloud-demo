@@ -2,6 +2,7 @@ package com.sangui.order.service.impl;
 
 
 import com.alibaba.csp.sentinel.annotation.SentinelResource;
+import com.alibaba.csp.sentinel.slots.block.BlockException;
 import com.sangui.order.bean.Order;
 import com.sangui.order.feign.ProductFeignClient;
 import com.sangui.order.service.OrderService;
@@ -40,7 +41,7 @@ public class OrderServiceImpl implements OrderService {
     RestTemplate restTemplate;
 
     // 加入注解，标记为一个资源，取名为：createOrder
-    @SentinelResource(value="createOrder")
+    @SentinelResource(value="createOrder",blockHandler = "createOrderFallback")
     @Override
     public Order createOrder(Long productId, Long userId) {
         // 之前的调用远程获取商品的方法
@@ -61,6 +62,16 @@ public class OrderServiceImpl implements OrderService {
 
         // 放入商品列表，我们模拟阶段，只放一个商品，修改 Order 实体类中的 productList 中 List 的数据类型为 Product
         order.setProductList(Arrays.asList(product));
+        return order;
+    }
+    // createOrder 的兜底回调
+    public Order createOrderFallback(Long productId, Long userId, BlockException e) {
+        Order order = new Order();
+        order.setId(-1L);
+        order.setTotalAmount(new BigDecimal("0.00"));
+        order.setUserId(userId);
+        order.setNickName("未知用户");
+        order.setAddress("未知地址，" + e.getClass());
         return order;
     }
 
