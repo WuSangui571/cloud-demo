@@ -14,6 +14,7 @@
     <modules>
         <module>services</module>
         <module>model</module>
+        <module>gateway</module>
     </modules>
     <groupId>com.sangui</groupId>
     <artifactId>cloud-demo</artifactId>

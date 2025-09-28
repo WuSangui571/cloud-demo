@@ -414,7 +414,7 @@ startup.cmd -m standalone
 
   这里的测试的代码几乎和 DiscoveryClient 的代码一模一样，只是把注入的对象换成了 nacosDiscoveryClient，加了异常抛出，具体 API 是一样的。
 
-其实在之后的实际情况中，我们其实无需底层调用这些代码，之后的`远程调用`用到的`服务发现`功能，会封装化为自动化的过程，无需我们手动写。唯一要记住的就是，所有的微服务都可以加入 @EnableDiscoveryClient 注解，这样之后微服务才能发现别的微服务，之间才可以互相调用
+其实在之后的实际情况中，我们其实无需底层调用这些代码，之后的`远程调用`用到的`服务发现`功能，会封装化为自动化的过程，无需我们手动写。唯一要记住的就是，所有的微服务都可以加入 @EnableDiscoveryClient 注解，这样之后微服务才能发现别的微服务，之间才可以互相调用。
 
 ## 2.5. Nacos ——编写微服务 API
 
@@ -901,7 +901,7 @@ Nacos 得负载均衡的核心就是，引入 `spring-cloud-starter-loadbalancer
   
       // 确定 url
       String url = "http://" + serviceProductInstance.getHost() + ":" + serviceProductInstance.getPort() + "/product/" + productId;
-      // 上述 url 为 http://localhost:9000/product/{productId}
+      // 上述 url 为 http://localhost:900?/product/{productId}
   
       // 2、发送远程请求
       log.info("远程请求 url:{}", url);
@@ -1735,7 +1735,7 @@ private Product getProductFromRemoteWithLoadBalanceAnnotation(Long productId) {
    logging:
      level:
        # 指定 feign 接口所在的包的日志级别为 debug 级别
-       indi.mofan.order.feign: debug
+       com.sangui.order.feign: debug
    ```
 
    向 Spring 容器中注册 `feign.Logger.Level` 对象：
@@ -1939,7 +1939,7 @@ private Product getProductFromRemoteWithLoadBalanceAnnotation(Long productId) {
       ```java
       @Component
       public class XTokenRequestInterceptor implements RequestInterceptor {
-          // --snip--
+          // 略
       }
       ```
 
@@ -2114,7 +2114,7 @@ Sentinel 是 SpringCloud Alibaba 提供的用于服务保护的框架，服务�
   java -jar sentinel-dashboard-1.8.8.jar
   ```
 
-  启动完成后，浏览器访问 `http://localhost:8080/`，默认用户与密码均为 `sentinel`。
+  启动完成后，浏览器访问 http://localhost:8080/ ，默认用户与密码均为 `sentinel`。
 
   ![image-20250927100704537](README.assets/image-20250927100704537.png)
 
@@ -2569,6 +2569,178 @@ public class OrderController {
 浏览：[localhost:8000/seckill?productId=666&userId=2](http://localhost:8000/seckill?productId=666&userId=2)  时，即会报出异常。userId=6时也会异常。
 
 # 5. Gateway
+
+![image-20250928162634307](README.assets/image-20250928162634307.png)
+
+假如我们的业务中有：订单、商品、支付、物流等服务，且这些实例不止一个，所以前端应用可以会要记住非常多的微服务地址，所以引入了 Gateway ，即网关，它就是所以业务集群的入口，以后前端就不需要记住每一个微服务的地址了，只需要记住网关一个的地址就好，前端发送请求到网关，由网关来判断该请求该转给哪个微服务。而网关如何实现把请求传给正确的微服务，就还是依赖于我们之前就学过的`服务注册/发现`的流程。
+
+## 5.1. 路由
+
+需求：
+
+1. 客户端发送 `/api/order/**` 转到 `service-order`
+2. 客户端发送 `/api/product/**` 转到 `service-product`
+3. 以上转发有负载均衡效果在
+
+下面，就根据这个需求来创建我们的路由。
+
++ **Step1 新建 gateway 模块**
+
+  在 service 和 model 的同级目录下，新建一个新的模块，叫做 gateway
+
++ **Step2 添加依赖**
+
+  在新模块下中添加依赖：
+
+  ```xml
+  <!--网关的依赖-->
+  <dependency>
+      <groupId>org.springframework.cloud</groupId>
+      <artifactId>spring-cloud-starter-gateway</artifactId>
+  </dependency>
+  <!--Nacos 注册中心也要引入-->
+  <dependency>
+      <groupId>com.alibaba.cloud</groupId>
+      <artifactId>spring-cloud-starter-alibaba-nacos-discovery</artifactId>
+  </dependency>
+  <!--负载均衡也要引入-->
+  <dependency>
+      <groupId>org.springframework.cloud</groupId>
+      <artifactId>spring-cloud-starter-loadbalancer</artifactId>
+  </dependency>
+  ```
+
++ **Step3 编写主入口程序**
+
+  ```java
+  package com.sangui.gateway;
+  
+  
+  import org.springframework.boot.SpringApplication;
+  import org.springframework.boot.autoconfigure.SpringBootApplication;
+  import org.springframework.cloud.client.discovery.EnableDiscoveryClient;
+  
+  /**
+   * @Author: sangui
+   * @CreateTime: 2025-09-28
+   * @Description: gateway 的主入口程序
+   * @Version: 1.0
+   */
+  // 加上注解开启发现
+  @EnableDiscoveryClient
+  @SpringBootApplication
+  public class GatewayMainApplication {
+      public static void main(String[] args) {
+          SpringApplication.run(GatewayMainApplication.class, args);
+      }
+  }
+  ```
+
++ **Step4 编写配置文件**
+
+  ```yaml
+  spring:
+    application:
+      name: gateway
+    cloud:
+      nacos:
+        server-addr: 127.0.0.1:8848
+  server:
+    port: 80
+  ```
+
+  至此，一个网关就创建完成了，并且可以在 Nacos 配置中心中发现。
+
++ **Step5 增加路由规则**
+
+  在配置文件中，添加如下规则：
+
+  ```yaml
+  spring: 
+    cloud: 
+  	gateway:
+        routes:
+            # id 全局唯一
+          - id: order-route
+            # 指定服务名称，lb 是 loadBalance 的缩写，代表负载均衡
+            uri: lb://service-order
+            # 指定断言规则，即路由匹配规则。
+            predicates:
+              - Path=/api/order/**
+              # 可添加更多路径规则...
+              # - Path=......
+            # order 代表顺序，数字越小，优先级越高
+            order: 1
+  
+          # 下一个路由规则
+          - id: product-route
+            uri: lb://service-product
+            predicates:
+              - Path=/api/product/**
+            order: 2
+  ```
+
++ **Step6 **
+
+  此时，访问：http://localhost:80/api/order/xxx ，还不行，因为还需要修改之前程序的 url，因为网关会直接把 /api/order/xxx 发给对应 order 实例，但实际上，我们 order 的路径是：/xxx，并没有前缀。
+
+  ```
+  package com.sangui.order.controller;
+  
+  
+  // import...
+  
+  // 加入前缀网址
+  @RequestMapping("/api/order")
+  @RestController
+  public class OrderController {
+  	@GetMapping("/writeDb")
+      public String writeDb() {
+          // ......
+      }
+  }
+  ```
+
+  ```java
+  package com.sangui.order.feign;
+  
+  
+  // import...
+  
+  // 新版本中不允许这样，只能在下面一个一个添加
+  //@RequestMapping("/api/product")
+  @FeignClient(value = "service-product", fallback = ProductFeignClientFallback.class)
+  public interface ProductFeignClient {
+      @GetMapping("/api/product/product/{productId}")
+      Product getProductById(@PathVariable("productId") Long productId);
+  }
+  
+  ```
+
+  ```java
+  package com.sangui.product.controller;
+  
+  
+  // import...
+  
+  // 加入前缀网址
+  @RequestMapping("/api/product")
+  @RestController
+  public class ProductController {
+  	@GetMapping("/product/{id}")
+      public Product getProduct(@PathVariable("id") Long productId){
+          // ......
+      }
+  }
+  ```
+
+  现在，输入：http://localhost:80/api/order/create?userId=1&productId=2，就可以正确路由并访问了，且这个请求是负载均衡的。
+
+## 5.2. 断言
+
+## 5.3. 过滤器
+
+## 5.4. 全局跨域
 
 # 6. Seata
 

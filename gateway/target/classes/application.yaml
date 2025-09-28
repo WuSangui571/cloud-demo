@@ -1,0 +1,31 @@
+spring:
+  application:
+    name: gateway
+  cloud:
+    nacos:
+      server-addr: 127.0.0.1:8848
+    gateway:
+      routes:
+          # id 全局唯一
+        - id: order-route
+          # 指定服务名称，lb 是 loadBalance 的缩写，代表负载均衡
+          uri: lb://service-order
+          # 指定断言规则，即路由匹配规则。
+          predicates:
+            - Path=/api/order/**
+            # 可添加更多路径规则...
+            # - Path=......
+          # order 代表顺序，数字越小，优先级越高
+          order: 1
+
+        # 下一个路由规则
+        - id: product-route
+          uri: lb://service-product
+          predicates:
+            - Path=/api/product/**
+          order: 2
+server:
+  port: 80
+
+
+

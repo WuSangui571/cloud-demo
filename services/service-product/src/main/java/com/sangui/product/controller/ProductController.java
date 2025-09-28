@@ -4,10 +4,7 @@ package com.sangui.product.controller;
 import com.sangui.product.bean.Product;
 import com.sangui.product.service.ProductService;
 import jakarta.annotation.Resource;
-import org.springframework.web.bind.annotation.GetMapping;
-import org.springframework.web.bind.annotation.PathVariable;
-import org.springframework.web.bind.annotation.RequestParam;
-import org.springframework.web.bind.annotation.RestController;
+import org.springframework.web.bind.annotation.*;
 
 /**
  * @Author: sangui
@@ -15,6 +12,7 @@ import org.springframework.web.bind.annotation.RestController;
  * @Description: 商品的 Controller
  * @Version: 1.0
  */
+@RequestMapping("/api/product")
 @RestController
 public class ProductController {
     @Resource

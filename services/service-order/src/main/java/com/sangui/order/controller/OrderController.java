@@ -9,6 +9,7 @@ import com.sangui.order.service.OrderService;
 import jakarta.annotation.Resource;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
@@ -19,6 +20,7 @@ import org.springframework.web.bind.annotation.RestController;
  * @Version: 1.0
  */
 // @RefreshScope
+@RequestMapping("/api/order")
 @Slf4j
 @RestController
 public class OrderController {
