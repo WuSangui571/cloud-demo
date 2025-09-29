@@ -18,6 +18,6 @@ import org.springframework.web.bind.annotation.PathVariable;
 @FeignClient(value = "service-product", fallback = ProductFeignClientFallback.class)
 public interface ProductFeignClient {
     // 和 Controller 中的注解一样，只不过这里是主动发送，在 Controller 中是接收
-    @GetMapping("/api/product/product/{productId}")
+    @GetMapping("/product/{productId}")
     Product getProductById(@PathVariable("productId") Long productId);
 }

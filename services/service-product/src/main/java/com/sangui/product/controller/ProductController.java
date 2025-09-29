@@ -12,7 +12,6 @@ import org.springframework.web.bind.annotation.*;
  * @Description: 商品的 Controller
  * @Version: 1.0
  */
-@RequestMapping("/api/product")
 @RestController
 public class ProductController {
     @Resource

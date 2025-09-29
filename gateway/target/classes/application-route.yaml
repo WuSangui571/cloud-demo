@@ -2,17 +2,17 @@ spring:
   cloud:
     gateway:
       routes:
-        - id: bing-route
-          uri: https://cn.bing.com
-          predicates:
-            - name: Path
-              args:
-                patterns: /search
-            - name: Query
-              args:
-                param: q
-                regexp: haha
-            - Vip=user,sangui
+#        - id: bing-route
+#          uri: https://cn.bing.com
+#          predicates:
+#            - name: Path
+#              args:
+#                patterns: /search
+#            - name: Query
+#              args:
+#                param: q
+#                regexp: haha
+#            - Vip=user,sangui
 
         # id 全局唯一
         - id: order-route
@@ -23,6 +23,12 @@ spring:
             - Path=/api/order/**
             # 可添加更多路径规则...
             # - Path=......
+          filters:
+            # 类似把 /api/order/a/bc 重写为 /a/bc，移除路径前的 /api/order/
+            - RewritePath=/api/order/?(?<segment>.*), /$\{segment}
+            # 添加新的响应头，添加的 key 是 sangui，value 是 blog
+            - OnceToken=X-Response-Token, uuid
+            # - AddResponseHeader=sangui, blog
           # order 代表顺序，数字越小，优先级越高
           # order: 1
 
@@ -31,6 +37,8 @@ spring:
           uri: lb://service-product
           predicates:
             - Path=/api/product/**
+          filters:
+            - RewritePath=/api/product/?(?<segment>.*), /$\{segment}
           # order: 2
 
 

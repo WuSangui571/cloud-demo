@@ -2915,11 +2915,204 @@ public class VipRoutePredicateFactory extends AbstractRoutePredicateFactory<VipR
 
 ## 5.3. 过滤器
 
+![image-20250929142921150](README.assets/image-20250929142921150.png)
 
+先前在网关中配置了将 `/api/order/` 开头的请求转到 `service-order` 服务，并要求在 `service-order` 服务中也存在 `/api/order/` 开头的请求路径，比如 `/api/order/readDb`。如果该服务中原先并不存在 `/api/order/` 开头的请求，比如只有 `/readDb`，那么在以 `/api/order/readDb` 进行访问就会出现 404 错误。
+
+为了解决这个问题，之前是在 `service-order` 服务对应的 Controller 上添加 `@RequestMapping("/api/order")` 注解，但这并不是最佳方案，如果能直接在网关层面解决这个问题就好了，就像把 `/api/order/readDb` 重写为 `/readDb`。
+
+```yaml
+spring:
+  cloud:
+    gateway:
+      routes:
+        - id: order-route
+          uri: lb://service-order
+          predicates:
+            - Path=/api/order/**
+          # 加上过滤器
+          filters:
+            # 类似把 /api/order/a/bc 重写为 /a/bc，移除路径前的 /api/order/
+            - RewritePath=/api/order/?(?<segment>.*), /$\{segment}
+
+        - id: product-route
+          uri: lb://service-product
+          predicates:
+            - Path=/api/product/**
+          # 也加上过滤器
+          filters:
+            - RewritePath=/api/product/?(?<segment>.*), /$\{segment}
+```
+
+现在，访问：http://localhost/api/order/writeDb ，就可以了。
+
+还可以加入其他的 filter，比如：
+
+```yaml
+filters:
+  - RewritePath=/api/order/?(?<segment>.*), /$\{segment}
+  # 添加新的响应头，添加的 key 是 X-Response-sangui，value 是 blog
+  - AddResponseHeader=sangui, blog
+```
+
+根据浏览器的开发者模式，可以看到，对应的请求已经加上了响应头。
+
+![image-20250929151201306](README.assets/image-20250929151201306.png)
+
+这就是过滤器，可以对请求和响应做出指定的过滤逻辑。
+
++ 默认过滤器
+
+  所谓默认的过滤器，就是不再是要像之前一样了，匹配一个路径之后，就写一个对应路径的过滤器。默认过滤器是过滤所以的请求和响应。
+
+  ```yaml
+  spring:
+    cloud:
+      gateway:
+        default-filters:
+          # 为所有路由添加响应头过滤器
+          - AddResponseHeader=sangui, blog
+        routes:
+          # ...
+  ```
+
++ 全局过滤器
+
+  除了默认过滤器，全局过滤器也能为所有路由添加一个过滤器，全局过滤器的配置无需修改配置文件。
+
+  要实现全局过滤器，就得实现 `GlobalFilter` 接口，并将实现类交由 Spring 管理。
+
+  还可以实现 `Ordered` 接口，调整多个全局过滤器的执行顺序。
+
+  ```java
+  package com.sangui.filter;
+  
+  
+  import lombok.extern.slf4j.Slf4j;
+  import org.springframework.cloud.gateway.filter.GatewayFilterChain;
+  import org.springframework.cloud.gateway.filter.GlobalFilter;
+  import org.springframework.core.Ordered;
+  import org.springframework.http.server.reactive.ServerHttpRequest;
+  import org.springframework.stereotype.Component;
+  import org.springframework.web.server.ServerWebExchange;
+  import reactor.core.publisher.Mono;
+  
+  /**
+   * @Author: sangui
+   * @CreateTime: 2025-09-29
+   * @Description: 获取每次请求的响应时间的全局过滤器，通过 请求后的时间 减去 请求开始的时间 获取
+   * @Version: 1.0
+   */
+  @Slf4j
+  @Component
+  // 实现 GlobalFilter 以实现全局过滤，再可选实现 ordered 调整多个全局过滤器的执行顺序
+  public class RtGlobalFilter implements GlobalFilter, Ordered {
+      @Override
+      public Mono<Void> filter(ServerWebExchange exchange, GatewayFilterChain chain) {
+          ServerHttpRequest request = exchange.getRequest();
+          String uri = request.getURI().toString();
+          long start = System.currentTimeMillis();
+          log.info("请求 [{}] 开始，时间：{}", uri, start);
+          return chain.filter(exchange)
+                  .doFinally(res -> {
+                      long end = System.currentTimeMillis();
+                      log.info("请求 [{}] 结束，时间：{}，耗时：{}ms", uri, start, end - start);
+                  });
+      }
+  
+      @Override
+      public int getOrder() {
+          // 决定过滤器的顺序
+          return 0;
+      }
+  }
+  ```
+
++ 自定义过滤器工厂
+
+  尽管 Gateway 内置了许多过滤器，但仍有无法满足需求的情况，此时就需要自定义过滤器工厂。
+
+  与自定义断言类似，自定义过滤器工厂的类名也有限制，要求以 `GatewayFilterFactory` 结尾，而配置文件中配置的名称就是类名开头。
+
+  比如需要在配置文件中定义名为 `OnceToken` 的过滤器，那么需要新增 `OnceTokenGatewayFilterFactory`：
+
+  ```java
+  package com.sangui.gateway.filter;
+  
+  
+  import org.springframework.cloud.gateway.filter.GatewayFilter;
+  import org.springframework.cloud.gateway.filter.factory.AbstractGatewayFilterFactory;
+  import org.springframework.cloud.gateway.filter.factory.AbstractNameValueGatewayFilterFactory;
+  import org.springframework.http.HttpHeaders;
+  import org.springframework.http.server.reactive.ServerHttpResponse;
+  import reactor.core.publisher.Mono;
+  
+  import java.util.UUID;
+  import java.util.function.Consumer;
+  
+  /**
+   * @Author: sangui
+   * @CreateTime: 2025-09-29
+   * @Description: 每次请求增加一次性令牌的自定义过滤器
+   * @Version: 1.0
+   */
+  @Component
+  public class OnceTokenGatewayFilterFactory extends AbstractNameValueGatewayFilterFactory {
+      @Override
+      public GatewayFilter apply(NameValueConfig config) {
+          return (exchange, chain) -> chain.filter(exchange).then(Mono.fromRunnable(() -> {
+              ServerHttpResponse response = exchange.getResponse();
+  
+              String value = switch (config.getValue().toLowerCase()) {
+                  case "uuid" -> UUID.randomUUID().toString();
+                  case "jwt" -> "Test Token";
+                  default -> "";
+              };
+  
+              HttpHeaders headers = response.getHeaders();
+              headers.add(config.getName(), value);
+          }));
+      }
+  }
+  ```
+
+  ```yaml
+  spring:
+    cloud:
+      gateway:
+        routes:
+          - id: order-route
+            uri: lb://service-order
+            filters:
+              # 自定义过滤器
+              - OnceToken=X-Response-Token, uuid
+  ```
+
+  根据浏览器的开发者模式，可以看到，对应的请求已经加上了响应头。
+
+  ![image-20250929154415833](README.assets/image-20250929154415833.png)
 
 ## 5.4. 全局跨域
 
+如果需要配置跨域，可以在 Controller 的类上添加 `@CrossOrigin` 注解。
 
+如果有许多 Controller，逐一添加注解太麻烦，可以在项目的配置类中添加 `CorsFilter` 类型的 Bean。
+
+上述方法只适用于单体服务，那如果在微服务中呢？
+
+借由 Gateway 的功能，可以在配置文件中轻松完成微服务的跨域配置：
+
+```yaml
+spring:
+  cloud:
+    gateway:
+      globalcors:
+        cors-configurations:
+          '[/**]':
+            allowed-origin-patterns: '*'
+            allowed-headers: '*'
+            allowedMethods: '*'
+```
 
 # 6. Seata
 

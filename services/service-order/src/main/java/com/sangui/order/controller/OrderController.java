@@ -20,7 +20,6 @@ import org.springframework.web.bind.annotation.RestController;
  * @Version: 1.0
  */
 // @RefreshScope
-@RequestMapping("/api/order")
 @Slf4j
 @RestController
 public class OrderController {
