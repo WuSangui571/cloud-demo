@@ -5,6 +5,10 @@
     <option name="originalFiles">
       <list>
         <option value="$PROJECT_DIR$/pom.xml" />
+        <option value="$PROJECT_DIR$/services/seata-storage/pom.xml" />
+        <option value="$PROJECT_DIR$/services/seata-order/pom.xml" />
+        <option value="$PROJECT_DIR$/services/seata-business/pom.xml" />
+        <option value="$PROJECT_DIR$/services/seata-account/pom.xml" />
       </list>
     </option>
   </component>
